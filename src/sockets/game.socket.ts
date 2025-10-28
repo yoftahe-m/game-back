@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Server, Socket } from 'socket.io';
 import { checkWinner, createEmptyBoard } from '@/utils/ticTacToe';
+import { pins } from '@/constants/ludo';
+import { getMovablePins } from '@/utils/ludo';
+import { PinColor } from '@/types/ludo';
 
 const games: {
   id: string;
@@ -55,7 +58,7 @@ export const setupGameSocket = (io: Server) => {
       let gameOptions = {};
       switch (type) {
         case 'Ludo':
-          gameOptions = {};
+          gameOptions = { pins: maxPlayers === 2 ? pins.filter((p) => p.color === 'red' || p.color === 'yellow') : pins, roll: 0, rolledBy: '' };
           break;
         case 'Tic Tac Toe':
           gameOptions = { board: createEmptyBoard() };
@@ -110,13 +113,63 @@ export const setupGameSocket = (io: Server) => {
 
     // 🎲 Ludo: roll die
     socket.on('ludo:rollDie', ({ userId, gameId }) => {
+      console.log('rolling a die', userId, gameId);
       const game = games.find((g) => g.id === gameId);
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
+      if (userId !== game.turn) return socket.emit('error', 'Not your turn');
+      if (userId === game.options.rolledBy) return socket.emit('error', 'You have already rolled a die');
 
       const roll = Math.floor(Math.random() * 6) + 1;
-      io.to(gameId).emit('ludo:rollDieResult', { userId, roll });
+      game.options.rolledBy = userId;
+      game.options.roll = roll;
+
+      let playerIndex = game.players.findIndex((p) => p.userId === userId);
+      let color: PinColor;
+      if (game.players.length === 4) {
+        color = ['red', 'blue', 'green', 'yellow'][playerIndex] as PinColor;
+      } else {
+        color = ['red', 'yellow'][playerIndex] as PinColor;
+      }
+
+      if (getMovablePins(game.options.pins, color, roll).length === 0) {
+        if (playerIndex === game.maxPlayers - 1) {
+          game.turn = game.players[0].userId;
+        } else {
+          game.turn = game.players[playerIndex + 1].userId;
+        }
+      }
+      io.to(gameId).emit('gameUpdate', game);
+    });
+
+    socket.on('ludo:movePin', ({ userId, gameId }) => {
+      const game = games.find((g) => g.id === gameId);
+      if (!game) return socket.emit('error', 'Game not found');
+      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
+      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
+      if (userId !== game.turn) return socket.emit('error', 'Not your turn');
+
+      let playerIndex = game.players.findIndex((p) => p.userId === game.turn);
+
+      let color: PinColor;
+      if (game.players.length === 4) {
+        color = ['red', 'blue', 'green', 'yellow'][playerIndex] as PinColor;
+      } else {
+        color = ['red', 'yellow'][playerIndex] as PinColor;
+      }
+
+      if (game.options.roll === 6) {
+        game.options.rolledBy = '';
+      } else {
+        if (playerIndex === game.maxPlayers - 1) {
+          game.turn = game.players[0].userId;
+        } else {
+          game.turn = game.players[playerIndex + 1].userId;
+        }
+      }
+
+      io.to(gameId).emit('gameUpdate', game);
     });
 
     // 🎯 TicTacToe move
@@ -124,10 +177,10 @@ export const setupGameSocket = (io: Server) => {
       console.log('selecting a cell', userId, gameId, cell);
       const game = games.find((g) => g.id === gameId);
       if (!game) return socket.emit('error', 'Game not found');
-      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started");
+      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
       if (userId !== game.turn) return socket.emit('error', 'Not your turn');
-      if (game.options.board[cell]) return socket.emit('error', 'Cell taken'); 
+      if (game.options.board[cell]) return socket.emit('error', 'Cell taken');
       game.options.board[cell] = userId;
       const winner = checkWinner(game.options.board);
 
