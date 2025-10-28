@@ -12,7 +12,7 @@ const Bootstrap = async (app: Application) => {
   // Initialize Socket.IO
   const io = new Server(server, {
     cors: {
-      origin: ['*', 'http://localhost:8081', 'http://192.168.5.60:8081/'],
+      origin: ['*', 'http://localhost:8081',"http://localhost:8081", 'http://192.168.180.60:8081/'],
       methods: ['GET', 'POST'],
       credentials: true,
     },

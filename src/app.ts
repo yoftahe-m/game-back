@@ -14,7 +14,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["*"], // Allow only your frontend URL
+    origin: ["*","http://localhost:8081",], // Allow only your frontend URL
     methods: ["GET", "POST", "PUT", "DELETE"], // Allowed methods
     credentials: true, // Allow credentials (cookies, etc.)
     allowedHeaders: ["Content-Type", "Authorization"], // Ensure proper headers

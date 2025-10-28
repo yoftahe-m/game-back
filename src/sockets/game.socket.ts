@@ -7,7 +7,7 @@ const games: {
   type: string;
   status: 'waiting' | 'playing' | 'ended';
   options: { [key: string]: any };
-  players: { userId: string; socketId: string }[];
+  players: { userId: string; username: string; socketId: string }[];
   maxPlayers: number;
   turn: string;
   winner: string | null;
@@ -15,14 +15,32 @@ const games: {
 }[] = [];
 
 export const setupGameSocket = (io: Server) => {
+  // 🔁 Helper: emit updated games list to everyone
+  const emitGamesUpdate = () => {
+    io.emit(
+      'games:update',
+      games.map((g) => ({
+        id: g.id,
+        type: g.type,
+        status: g.status,
+        maxPlayers: g.maxPlayers,
+        players: g.players.map((p) => p.userId),
+        amount: g.amount,
+      }))
+    );
+  };
+
   io.on('connection', (socket: Socket) => {
     console.log('⚡ Client connected:', socket.id);
 
+    // Send current games list on connect
+    socket.emit('games:update', games);
+
     // 🟢 Create a game
-    socket.on('createGame', ({ userId, type, options, amount }) => {
+    socket.on('createGame', ({ userId, username, type, options, amount }) => {
+      console.log('creating a room', userId, username, type, options, amount);
       const roomId = `room_${uuidv4()}`;
 
-      // ✅ Validate game type and options
       if (type === 'ludo' && ![2, 3, 4].includes(options?.maxPlayers)) {
         socket.emit('error', 'Ludo supports only 2, 3, or 4 players');
         return;
@@ -32,15 +50,14 @@ export const setupGameSocket = (io: Server) => {
         socket.emit('error', 'Minimum amount to join a game is 5');
         return;
       }
-
       const maxPlayers = type === 'ludo' ? options?.maxPlayers || 2 : 2;
 
       let gameOptions = {};
       switch (type) {
-        case 'ludo':
+        case 'Ludo':
           gameOptions = {};
           break;
-        case 'ticTacToe':
+        case 'Tic Tac Toe':
           gameOptions = { board: createEmptyBoard() };
           break;
         default:
@@ -53,113 +70,64 @@ export const setupGameSocket = (io: Server) => {
         type,
         status: 'waiting' as const,
         options: gameOptions,
-        players: [{ userId, socketId: socket.id }],
+        players: [{ userId, username, socketId: socket.id }],
         turn: userId,
         maxPlayers,
         winner: null,
-        amount: amount,
+        amount,
       };
 
       games.push(newGame);
       socket.join(roomId);
 
       console.log(`🎮 New ${type} game created: ${roomId} (${maxPlayers} players)`);
+      socket.emit('waiting', newGame);
 
-      socket.emit('waiting', `Waiting for ${maxPlayers - 1} more player(s) to join...`);
+      emitGamesUpdate(); // 🔁 update everyone
     });
 
     // 🟡 Join an existing game
-    socket.on('joinGame', ({ userId, gameId }) => {
+    socket.on('joinGame', ({ userId, username, gameId }) => {
+      console.log('joining a room', userId, username, gameId);
       const game = games.find((g) => g.id === gameId);
+      if (!game) return socket.emit('error', 'Game not found');
+      if (game.status !== 'waiting') return socket.emit('error', 'Game already started');
+      if (game.players.some((p) => p.userId === userId)) return socket.emit('error', 'Already in this game');
 
-      if (!game) {
-        socket.emit('error', 'Game not found');
-        return;
-      }
-
-      if (game.status !== 'waiting') {
-        socket.emit('error', 'Game already started or ended');
-        return;
-      }
-
-      // Check for duplicate players
-      if (game.players.find((p) => p.userId === userId)) {
-        socket.emit('error', 'You are already in this game');
-        return;
-      }
-
-      // Add player
-      game.players.push({ userId, socketId: socket.id });
+      game.players.push({ userId, username, socketId: socket.id });
       socket.join(gameId);
 
-      const remaining = (game.maxPlayers || 2) - game.players.length;
+      const remaining = game.maxPlayers - game.players.length;
+      if (remaining > 0) io.to(gameId).emit('waiting', game);
 
-      if (remaining > 0) {
-        // Still waiting for more players
-        io.to(gameId).emit('waiting', `Waiting for ${remaining} more player(s) to join...`);
-      }
-
-      // ✅ Start the game when full
       if (game.players.length === game.maxPlayers) {
         game.status = 'playing';
-        io.to(gameId).emit('gameStarted', {
-          gameId,
-          players: game.players.map((p) => p.userId),
-          message: 'Game started!',
-        });
+        io.to(gameId).emit('gameStarted', game);
       }
+
+      emitGamesUpdate(); // 🔁 update everyone
     });
 
     // 🎲 Ludo: roll die
     socket.on('ludo:rollDie', ({ userId, gameId }) => {
       const game = games.find((g) => g.id === gameId);
-      if (!game) {
-        socket.emit('error', 'Game not found');
-        return;
-      }
-
-      if (game.status !== 'playing') {
-        socket.emit('error', "Game hasn't started or has ended already");
-        return;
-      }
-
-      if (!game.players.map((p) => p.userId).includes(userId)) {
-        socket.emit('error', "You're not part of this game");
-        return;
-      }
+      if (!game) return socket.emit('error', 'Game not found');
+      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
+      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
 
       const roll = Math.floor(Math.random() * 6) + 1;
       io.to(gameId).emit('ludo:rollDieResult', { userId, roll });
     });
 
-    // ticTacToe:selectCell
+    // 🎯 TicTacToe move
     socket.on('ticTacToe:selectCell', ({ userId, gameId, cell }) => {
+      console.log('selecting a cell', userId, gameId, cell);
       const game = games.find((g) => g.id === gameId);
-      if (!game) {
-        socket.emit('error', 'Game not found');
-        return;
-      }
-
-      if (game.status !== 'playing') {
-        socket.emit('error', "Game hasn't started or has ended already");
-        return;
-      }
-
-      if (!game.players.map((p) => p.userId).includes(userId)) {
-        socket.emit('error', "You're not part of this game");
-        return;
-      }
-
-      if (userId !== game.turn) {
-        socket.emit('error', "It's not your turn");
-        return;
-      }
-
-      if (game.options.board[cell]) {
-        socket.emit('error', 'Cell is already taken');
-        return;
-      }
-
+      if (!game) return socket.emit('error', 'Game not found');
+      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started");
+      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
+      if (userId !== game.turn) return socket.emit('error', 'Not your turn');
+      if (game.options.board[cell]) return socket.emit('error', 'Cell taken'); 
       game.options.board[cell] = userId;
       const winner = checkWinner(game.options.board);
 
@@ -167,18 +135,18 @@ export const setupGameSocket = (io: Server) => {
         game.status = 'ended';
         game.winner = winner;
         io.to(gameId).emit('gameOver', game);
-        const idx = games.indexOf(game);
-        if (idx !== -1) games.splice(idx, 1);
+        games.splice(games.indexOf(game), 1);
       } else if (game.options.board.every((c: string | null) => c)) {
         game.status = 'ended';
         game.winner = 'draw';
         io.to(gameId).emit('gameOver', game);
-        const idx = games.indexOf(game);
-        if (idx !== -1) games.splice(idx, 1);
+        games.splice(games.indexOf(game), 1);
       } else {
         game.turn = game.players.find((p) => p.userId !== userId)!.userId;
         io.to(gameId).emit('gameUpdate', game);
       }
+
+      emitGamesUpdate(); // 🔁 update everyone
     });
 
     // ❌ Handle disconnect
@@ -197,15 +165,18 @@ export const setupGameSocket = (io: Server) => {
           } else {
             io.to(game.id).emit('playerLeft', { userId: leftPlayer.userId });
 
-            // ✅ Auto-end game if only one player remains
             if (game.players.length < 2 && game.status === 'playing') {
               game.status = 'ended';
-              io.to(game.id).emit('gameOver', { ...game, winner: game.players[0]?.userId || null });
+              io.to(game.id).emit('gameOver', {
+                ...game,
+                winner: game.players[0]?.userId || null,
+              });
               games.splice(games.indexOf(game), 1);
             }
           }
 
-          break; // stop iterating once handled
+          emitGamesUpdate(); // 🔁 update everyone after any change
+          break;
         }
       }
     });
