@@ -2,8 +2,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { Server, Socket } from 'socket.io';
 import { checkWinner, createEmptyBoard } from '@/utils/ticTacToe';
 import { pins } from '@/constants/ludo';
-import { getMovablePins } from '@/utils/ludo';
+import { getMovablePins, handlePinCollision, movePiece } from '@/utils/ludo';
 import { PinColor } from '@/types/ludo';
+import { shuffle, createDeck } from '@/utils/crazy';
 
 const games: {
   id: string;
@@ -61,7 +62,11 @@ export const setupGameSocket = (io: Server) => {
           gameOptions = { pins: maxPlayers === 2 ? pins.filter((p) => p.color === 'red' || p.color === 'yellow') : pins, roll: 0, rolledBy: '' };
           break;
         case 'Tic Tac Toe':
-          gameOptions = { board: createEmptyBoard() };
+          gameOptions = { board: createEmptyBoard() }; 
+          break;
+        case 'Crazy':
+          // let deck = shuffle(createDeck());
+          gameOptions = { drawPenalty: 0, discard: [] };
           break;
         default:
           socket.emit('error', 'Unsupported game type');
@@ -91,8 +96,8 @@ export const setupGameSocket = (io: Server) => {
 
     // 🟡 Join an existing game
     socket.on('joinGame', ({ userId, username, gameId }) => {
-      console.log('joining a room', userId, username, gameId);
       const game = games.find((g) => g.id === gameId);
+      console.log('joining a room', userId, username, gameId,game);
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'waiting') return socket.emit('error', 'Game already started');
       if (game.players.some((p) => p.userId === userId)) return socket.emit('error', 'Already in this game');
@@ -133,7 +138,8 @@ export const setupGameSocket = (io: Server) => {
         color = ['red', 'yellow'][playerIndex] as PinColor;
       }
 
-      if (getMovablePins(game.options.pins, color, roll).length === 0) {
+      let movablePins = getMovablePins(game.options.pins, color, roll).length;
+      if (movablePins === 0) {
         if (playerIndex === game.maxPlayers - 1) {
           game.turn = game.players[0].userId;
         } else {
@@ -143,12 +149,14 @@ export const setupGameSocket = (io: Server) => {
       io.to(gameId).emit('gameUpdate', game);
     });
 
-    socket.on('ludo:movePin', ({ userId, gameId }) => {
+    socket.on('ludo:movePin', ({ userId, gameId, pinHome }) => {
+      console.log('moving pin', userId, gameId, pinHome);
       const game = games.find((g) => g.id === gameId);
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
       if (userId !== game.turn) return socket.emit('error', 'Not your turn');
+      if (userId !== game.options.rolledBy) return socket.emit('error', 'You have not rolled a die yet');
 
       let playerIndex = game.players.findIndex((p) => p.userId === game.turn);
 
@@ -158,6 +166,16 @@ export const setupGameSocket = (io: Server) => {
       } else {
         color = ['red', 'yellow'][playerIndex] as PinColor;
       }
+
+      let movablePins = getMovablePins(game.options.pins, color, game.options.roll);
+
+      let pin = movablePins.find((p) => p.home === pinHome);
+
+      if (!pin) return socket.emit('error', "This pin can't move");
+
+      movePiece(pin, game.options.roll);
+
+      handlePinCollision(game.options.pins, pin);
 
       if (game.options.roll === 6) {
         game.options.rolledBy = '';

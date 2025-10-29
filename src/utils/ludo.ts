@@ -9,11 +9,15 @@ export function checkWinner(pins: Pin[], count: number, color: PinColor) {
 export function calculateStepsToWin(currentPosition: string, winPosition: string, pinColor: PinColor): number {
   let steps = 0;
   let square = LUDO_BOARD.flat().find((sq) => sq.id === currentPosition);
+
   while (square && square.id !== winPosition) {
-    if (square[pinColor]) square = LUDO_BOARD.flat().find((sq) => sq.id === square?.[pinColor]);
-    else square = LUDO_BOARD.flat().find((sq) => sq.id === square?.next);
+    const nextId = square[pinColor] || square.next;
+    if (!nextId) break; // stop if no next square
+    square = LUDO_BOARD.flat().find((sq) => sq.id === nextId);
+    if (!square) break; // stop if invalid square id
     steps++;
   }
+
   return steps;
 }
 
