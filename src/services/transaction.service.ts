@@ -12,7 +12,7 @@ export const fetchHistory = async (page: number, size: number, userId: string) =
       count: 'exact',
     })
     .eq('user_id', userId)
-    .order('created_at')
+    .order('created_at', { ascending: false })
     .range(from, to);
 
   if (error) throw error;
