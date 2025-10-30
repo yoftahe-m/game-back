@@ -5,6 +5,7 @@ import { pins } from '@/constants/ludo';
 import { getMovablePins, handlePinCollision, movePiece } from '@/utils/ludo';
 import { PinColor } from '@/types/ludo';
 import { shuffle, createDeck } from '@/utils/crazy';
+import { addTransaction } from '@/utils/transaction';
 
 const games: {
   id: string;
@@ -37,11 +38,14 @@ export const setupGameSocket = (io: Server) => {
   io.on('connection', (socket: Socket) => {
     console.log('⚡ Client connected:', socket.id);
 
+    const { userId } = socket.data;
+    console.log(socket.data);
+
     // Send current games list on connect
     socket.emit('games:update', games);
 
     // 🟢 Create a game
-    socket.on('createGame', ({ userId, username, type, options, amount }) => {
+    socket.on('createGame', ({ username, type, options, amount }) => {
       console.log('creating a room', userId, username, type, options, amount);
       const roomId = `room_${uuidv4()}`;
 
@@ -62,7 +66,7 @@ export const setupGameSocket = (io: Server) => {
           gameOptions = { pins: maxPlayers === 2 ? pins.filter((p) => p.color === 'red' || p.color === 'yellow') : pins, roll: 0, rolledBy: '' };
           break;
         case 'Tic Tac Toe':
-          gameOptions = { board: createEmptyBoard() }; 
+          gameOptions = { board: createEmptyBoard() };
           break;
         case 'Crazy':
           // let deck = shuffle(createDeck());
@@ -95,9 +99,9 @@ export const setupGameSocket = (io: Server) => {
     });
 
     // 🟡 Join an existing game
-    socket.on('joinGame', ({ userId, username, gameId }) => {
+    socket.on('joinGame', ({ username, gameId }) => {
       const game = games.find((g) => g.id === gameId);
-      console.log('joining a room', userId, username, gameId,game);
+      console.log('joining a room', userId, username, gameId, game);
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'waiting') return socket.emit('error', 'Game already started');
       if (game.players.some((p) => p.userId === userId)) return socket.emit('error', 'Already in this game');
@@ -116,8 +120,46 @@ export const setupGameSocket = (io: Server) => {
       emitGamesUpdate(); // 🔁 update everyone
     });
 
+    socket.on('leaveGame', ({ gameId }) => {
+      const game = games.find((g) => g.id === gameId);
+      console.log('leaving a room', userId, gameId, game);
+      if (!game) return socket.emit('error', 'Game not found');
+      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
+
+      // Remove player
+      game.players = game.players.filter((p) => p.userId !== userId);
+      socket.leave(gameId);
+
+      // Handle empty game
+      if (game.players.length === 0) {
+        games.splice(games.indexOf(game), 1);
+        emitGamesUpdate();
+        return;
+      }
+
+      // If game hasn't started yet, keep waiting
+      if (game.status === 'waiting') {
+        io.to(gameId).emit('waiting', game);
+      }
+
+      // If game started and a player leaves, end it
+      if (game.status === 'playing') {
+        if (game.players.length < 2) {
+          game.status = 'ended';
+          game.winner = game.players[0]?.userId || null;
+          io.to(gameId).emit('gameOver', game);
+          games.splice(games.indexOf(game), 1);
+        } else {
+          // Notify others that a player left, continue game
+          io.to(gameId).emit('playerLeft', { userId });
+        }
+      }
+
+      emitGamesUpdate();
+    });
+
     // 🎲 Ludo: roll die
-    socket.on('ludo:rollDie', ({ userId, gameId }) => {
+    socket.on('ludo:rollDie', ({ gameId }) => {
       console.log('rolling a die', userId, gameId);
       const game = games.find((g) => g.id === gameId);
       if (!game) return socket.emit('error', 'Game not found');
@@ -149,7 +191,7 @@ export const setupGameSocket = (io: Server) => {
       io.to(gameId).emit('gameUpdate', game);
     });
 
-    socket.on('ludo:movePin', ({ userId, gameId, pinHome }) => {
+    socket.on('ludo:movePin', ({ gameId, pinHome }) => {
       console.log('moving pin', userId, gameId, pinHome);
       const game = games.find((g) => g.id === gameId);
       if (!game) return socket.emit('error', 'Game not found');
@@ -191,7 +233,7 @@ export const setupGameSocket = (io: Server) => {
     });
 
     // 🎯 TicTacToe move
-    socket.on('ticTacToe:selectCell', ({ userId, gameId, cell }) => {
+    socket.on('ticTacToe:selectCell', ({ gameId, cell }) => {
       console.log('selecting a cell', userId, gameId, cell);
       const game = games.find((g) => g.id === gameId);
       if (!game) return socket.emit('error', 'Game not found');
@@ -206,6 +248,12 @@ export const setupGameSocket = (io: Server) => {
         game.status = 'ended';
         game.winner = winner;
         io.to(gameId).emit('gameOver', game);
+        addTransaction(
+          game.amount,
+          game.type,
+          winner,
+          game.players.filter((p) => p.userId !== winner).map((p) => p.userId)
+        );
         games.splice(games.indexOf(game), 1);
       } else if (game.options.board.every((c: string | null) => c)) {
         game.status = 'ended';

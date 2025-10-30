@@ -40,6 +40,8 @@ export const register = async (email: string, password: string, full_name: strin
       fullName: data.user!.user_metadata.full_name,
       profilePic: null,
       created_at: data.user!.created_at,
+      coins:0,
+      rewards:0
     },
     accessToken: data.session?.access_token,
     refreshToken: data.session?.refresh_token,
@@ -57,6 +59,8 @@ export const login = async (email: string, password: string) => {
 
   const { data: user, error: userError } = await supabase.from('users').select('*').eq('email', email).single();
 
+  if (userError) throw userError;
+
   return {
     user: {
       id: user.id,
@@ -64,6 +68,8 @@ export const login = async (email: string, password: string) => {
       fullName: user.full_name,
       profilePic: user.picture || null,
       created_at: user.created_at,
+      coins: user.coins,
+      rewards: user.rewards,
     },
     accessToken: data.session?.access_token,
     refreshToken: data.session?.refresh_token,
