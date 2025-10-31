@@ -5,7 +5,7 @@ import { pins } from '@/constants/ludo';
 import { getMovablePins, handlePinCollision, movePiece } from '@/utils/ludo';
 import { PinColor } from '@/types/ludo';
 import { shuffle, createDeck } from '@/utils/crazy';
-import { addTransaction } from '@/utils/transaction';
+import { addTransaction, checkBalance } from '@/utils/transaction';
 
 const games: {
   id: string;
@@ -43,8 +43,11 @@ export const setupGameSocket = (io: Server) => {
     // Send current games list on connect
     socket.emit('games:update', games);
 
+    socket.on('games:get', () => {
+      emitGamesUpdate();
+    });
     // 🟢 Create a game
-    socket.on('createGame', ({ username, type, options, amount }) => {
+    socket.on('createGame', async ({ username, type, options, amount }) => {
       console.log('creating a room', userId, username, type, options, amount);
       const roomId = `room_${uuidv4()}`;
 
@@ -57,6 +60,14 @@ export const setupGameSocket = (io: Server) => {
         socket.emit('error', 'Minimum amount to join a game is 5');
         return;
       }
+
+      const response = await checkBalance(userId, amount);
+
+      if (response !== 'has enough') {
+        socket.emit('error', response);
+        return;
+      }
+
       const maxPlayers = type === 'ludo' ? options?.maxPlayers || 2 : 2;
 
       let gameOptions = {};
@@ -102,7 +113,7 @@ export const setupGameSocket = (io: Server) => {
     });
 
     // 🟡 Join an existing game
-    socket.on('joinGame', ({ username, gameId }) => {
+    socket.on('joinGame', async ({ username, gameId }) => {
       const game = games.find((g) => g.id === gameId);
       console.log('joining a room', userId, username, gameId, game);
       if (!game) return socket.emit('error', 'Game not found');
@@ -110,6 +121,13 @@ export const setupGameSocket = (io: Server) => {
       if (game.players.some((p) => p.userId === userId)) return socket.emit('error', 'Already in this game');
       const isUserActiveInAnyGame = games.some((game) => game.players.some((player) => player.userId === userId && player.status === 'active'));
       if (isUserActiveInAnyGame) return socket.emit('error', 'Already is playing a game');
+
+      const response = await checkBalance(userId, game.amount);
+
+      if (response !== 'has enough') {
+        socket.emit('error', response);
+        return;
+      }
 
       game.players.push({ userId, username, socketId: socket.id, status: 'active' });
       socket.join(gameId);

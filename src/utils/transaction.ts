@@ -21,10 +21,10 @@ export async function checkBalance(userId: string, amount: number) {
 
   if (error) {
     console.log(error);
-    return 'failed to check';
+    return 'failed to check coins';
   }
 
   if (!data) return 'user not found';
 
-  return data.coins >= amount ? 'has enough' : "doesn't have enough";
+  return data.coins >= amount ? 'has enough' : "doesn't have enough coins";
 }
