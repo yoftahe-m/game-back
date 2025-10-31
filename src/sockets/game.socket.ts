@@ -126,28 +126,30 @@ export const setupGameSocket = (io: Server) => {
       if (!game) return socket.emit('error', 'Game not found');
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
 
-      // Remove player
-      game.players = game.players.filter((p) => p.userId !== userId);
-      socket.leave(gameId);
-
-      // Handle empty game
-      if (game.players.length === 0) {
-        games.splice(games.indexOf(game), 1);
-        emitGamesUpdate();
-        return;
-      }
-
-      // If game hasn't started yet, keep waiting
       if (game.status === 'waiting') {
-        io.to(gameId).emit('waiting', game);
-      }
+        // Remove player
+        game.players = game.players.filter((p) => p.userId !== userId);
+        socket.leave(gameId);
 
-      // If game started and a player leaves, end it
-      if (game.status === 'playing') {
-        if (game.players.length < 2) {
+        // Handle empty game
+        if (game.players.length === 0) {
+          games.splice(games.indexOf(game), 1);
+          emitGamesUpdate();
+          return;
+        }
+
+        io.to(gameId).emit('waiting', game);
+      } else if (game.status === 'playing') {
+        if (game.players.length === 2) {
           game.status = 'ended';
-          game.winner = game.players[0]?.userId || null;
+          game.winner = game.players.find((p) => p.userId !== userId)!.userId;
           io.to(gameId).emit('gameOver', game);
+          addTransaction(
+            game.amount,
+            game.type,
+            game.winner,
+            game.players.filter((p) => p.userId !== game.winner).map((p) => p.userId)
+          );
           games.splice(games.indexOf(game), 1);
         } else {
           // Notify others that a player left, continue game
