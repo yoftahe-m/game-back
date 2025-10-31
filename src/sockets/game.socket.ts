@@ -12,7 +12,7 @@ const games: {
   type: string;
   status: 'waiting' | 'playing' | 'ended';
   options: { [key: string]: any };
-  players: { userId: string; username: string; socketId: string }[];
+  players: { userId: string; username: string; socketId: string; status: 'active' | 'inactive' }[];
   maxPlayers: number;
   turn: string;
   winner: string | null;
@@ -82,7 +82,7 @@ export const setupGameSocket = (io: Server) => {
         type,
         status: 'waiting' as const,
         options: gameOptions,
-        players: [{ userId, username, socketId: socket.id }],
+        players: [{ userId, username, socketId: socket.id, status: 'active' as 'active' | 'inactive' }],
         turn: userId,
         maxPlayers,
         winner: null,
@@ -105,8 +105,10 @@ export const setupGameSocket = (io: Server) => {
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'waiting') return socket.emit('error', 'Game already started');
       if (game.players.some((p) => p.userId === userId)) return socket.emit('error', 'Already in this game');
+      const isUserActiveInAnyGame = games.some((game) => game.players.some((player) => player.userId === userId && player.status === 'active'));
+      if (isUserActiveInAnyGame) return socket.emit('error', 'Already is playing a game');
 
-      game.players.push({ userId, username, socketId: socket.id });
+      game.players.push({ userId, username, socketId: socket.id, status: 'active' });
       socket.join(gameId);
 
       const remaining = game.maxPlayers - game.players.length;
@@ -123,8 +125,10 @@ export const setupGameSocket = (io: Server) => {
     socket.on('leaveGame', ({ gameId }) => {
       const game = games.find((g) => g.id === gameId);
       console.log('leaving a room', userId, gameId, game);
+
       if (!game) return socket.emit('error', 'Game not found');
-      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
+      const player = game.players.find((p) => p.userId === userId);
+      if (!player) return socket.emit('error', "You're not in this game");
 
       if (game.status === 'waiting') {
         // Remove player
@@ -140,20 +144,27 @@ export const setupGameSocket = (io: Server) => {
 
         io.to(gameId).emit('waiting', game);
       } else if (game.status === 'playing') {
+        // Set leaving player to inactive
+        player.status = 'inactive';
+        socket.leave(gameId);
+
         if (game.players.length === 2) {
+          // If only 2 players, end the game and declare the other as winner
           game.status = 'ended';
           game.winner = game.players.find((p) => p.userId !== userId)!.userId;
           io.to(gameId).emit('gameOver', game);
+
           addTransaction(
             game.amount,
             game.type,
             game.winner,
             game.players.filter((p) => p.userId !== game.winner).map((p) => p.userId)
           );
+
           games.splice(games.indexOf(game), 1);
         } else {
-          // Notify others that a player left, continue game
-          io.to(gameId).emit('playerLeft', { userId });
+          // Notify others that a player left but continue the game
+          io.to(gameId).emit('playerLeft', { userId, status: 'inactive' });
         }
       }
 
