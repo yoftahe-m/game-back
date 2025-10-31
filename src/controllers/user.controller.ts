@@ -10,10 +10,10 @@ import {
 
 // Register User
 export const registerUser = async (req: Request, res: Response) => {
-  const { email, password, full_name } = req.body;
+  const { email, password, full_name ,phone} = req.body;
 
   try {
-    const user = await register(email, password, full_name);
+    const user = await register(email, password, full_name,phone);
     res.status(201).json(user);
   } catch (error) {
     res.status(400).json({ message: (error as Error).message });

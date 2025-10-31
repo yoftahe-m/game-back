@@ -22,12 +22,12 @@ const uploadImage = async (file: Express.Multer.File, userId: string, bucket: st
 };
 
 // Register User
-export const register = async (email: string, password: string, full_name: string) => {
+export const register = async (email: string, password: string, full_name: string, phone: string) => {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      data: { full_name },
+      data: { full_name, phone },
     },
   });
 
@@ -38,10 +38,11 @@ export const register = async (email: string, password: string, full_name: strin
       id: data.user!.id,
       email: data.user!.email,
       fullName: data.user!.user_metadata.full_name,
+      phone: data.user!.user_metadata.phone,
       profilePic: null,
       created_at: data.user!.created_at,
-      coins:0,
-      rewards:0
+      coins: 0,
+      rewards: 0,
     },
     accessToken: data.session?.access_token,
     refreshToken: data.session?.refresh_token,
@@ -66,6 +67,7 @@ export const login = async (email: string, password: string) => {
       id: user.id,
       email: user.email,
       fullName: user.full_name,
+      phone: user.phone,
       profilePic: user.picture || null,
       created_at: user.created_at,
       coins: user.coins,

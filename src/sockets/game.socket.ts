@@ -14,7 +14,6 @@ const games: {
   options: { [key: string]: any };
   players: { userId: string; username: string; socketId: string; status: 'active' | 'inactive' }[];
   maxPlayers: number;
-  turn: string;
   winner: string | null;
   amount: number;
 }[] = [];
@@ -63,14 +62,19 @@ export const setupGameSocket = (io: Server) => {
       let gameOptions = {};
       switch (type) {
         case 'Ludo':
-          gameOptions = { pins: maxPlayers === 2 ? pins.filter((p) => p.color === 'red' || p.color === 'yellow') : pins, roll: 0, rolledBy: '' };
+          gameOptions = {
+            pins: maxPlayers === 2 ? pins.filter((p) => p.color === 'red' || p.color === 'yellow') : pins,
+            roll: 0,
+            rolledBy: '',
+            turn: userId,
+          };
           break;
         case 'Tic Tac Toe':
-          gameOptions = { board: createEmptyBoard() };
+          gameOptions = { board: createEmptyBoard(), turn: userId };
           break;
         case 'Crazy':
           // let deck = shuffle(createDeck());
-          gameOptions = { drawPenalty: 0, discard: [] };
+          gameOptions = { drawPenalty: 0, discard: [], turn: userId };
           break;
         default:
           socket.emit('error', 'Unsupported game type');
@@ -83,7 +87,6 @@ export const setupGameSocket = (io: Server) => {
         status: 'waiting' as const,
         options: gameOptions,
         players: [{ userId, username, socketId: socket.id, status: 'active' as 'active' | 'inactive' }],
-        turn: userId,
         maxPlayers,
         winner: null,
         amount,
@@ -178,7 +181,7 @@ export const setupGameSocket = (io: Server) => {
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-      if (userId !== game.turn) return socket.emit('error', 'Not your turn');
+      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
       if (userId === game.options.rolledBy) return socket.emit('error', 'You have already rolled a die');
 
       const roll = Math.floor(Math.random() * 6) + 1;
@@ -196,9 +199,9 @@ export const setupGameSocket = (io: Server) => {
       let movablePins = getMovablePins(game.options.pins, color, roll).length;
       if (movablePins === 0) {
         if (playerIndex === game.maxPlayers - 1) {
-          game.turn = game.players[0].userId;
+          game.options.turn = game.players[0].userId;
         } else {
-          game.turn = game.players[playerIndex + 1].userId;
+          game.options.turn = game.players[playerIndex + 1].userId;
         }
       }
       io.to(gameId).emit('gameUpdate', game);
@@ -210,10 +213,10 @@ export const setupGameSocket = (io: Server) => {
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-      if (userId !== game.turn) return socket.emit('error', 'Not your turn');
+      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
       if (userId !== game.options.rolledBy) return socket.emit('error', 'You have not rolled a die yet');
 
-      let playerIndex = game.players.findIndex((p) => p.userId === game.turn);
+      let playerIndex = game.players.findIndex((p) => p.userId === game.options.turn);
 
       let color: PinColor;
       if (game.players.length === 4) {
@@ -236,9 +239,9 @@ export const setupGameSocket = (io: Server) => {
         game.options.rolledBy = '';
       } else {
         if (playerIndex === game.maxPlayers - 1) {
-          game.turn = game.players[0].userId;
+          game.options.turn = game.players[0].userId;
         } else {
-          game.turn = game.players[playerIndex + 1].userId;
+          game.options.turn = game.players[playerIndex + 1].userId;
         }
       }
 
@@ -252,7 +255,7 @@ export const setupGameSocket = (io: Server) => {
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-      if (userId !== game.turn) return socket.emit('error', 'Not your turn');
+      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
       if (game.options.board[cell]) return socket.emit('error', 'Cell taken');
       game.options.board[cell] = userId;
       const winner = checkWinner(game.options.board);
@@ -274,7 +277,7 @@ export const setupGameSocket = (io: Server) => {
         io.to(gameId).emit('gameOver', game);
         games.splice(games.indexOf(game), 1);
       } else {
-        game.turn = game.players.find((p) => p.userId !== userId)!.userId;
+        game.options.turn = game.players.find((p) => p.userId !== userId)!.userId;
         io.to(gameId).emit('gameUpdate', game);
       }
 
@@ -286,30 +289,49 @@ export const setupGameSocket = (io: Server) => {
       console.log('❌ Disconnected:', socket.id);
 
       for (const game of games) {
-        const index = game.players.findIndex((p) => p.socketId === socket.id);
-        if (index !== -1) {
-          const leftPlayer = game.players.splice(index, 1)[0];
-          console.log(`🚪 Player ${leftPlayer.userId} left game ${game.id}`);
+        const player = game.players.find((p) => p.socketId === socket.id);
+        if (!player) continue;
+
+        console.log(`🚪 Player ${player.userId} disconnected from game ${game.id}`);
+        socket.leave(game.id);
+
+        if (game.status === 'waiting') {
+          // Remove player from waiting game
+          game.players = game.players.filter((p) => p.socketId !== socket.id);
 
           if (game.players.length === 0) {
-            game.status = 'ended';
             games.splice(games.indexOf(game), 1);
-          } else {
-            io.to(game.id).emit('playerLeft', { userId: leftPlayer.userId });
-
-            if (game.players.length < 2 && game.status === 'playing') {
-              game.status = 'ended';
-              io.to(game.id).emit('gameOver', {
-                ...game,
-                winner: game.players[0]?.userId || null,
-              });
-              games.splice(games.indexOf(game), 1);
-            }
+            emitGamesUpdate();
+            return;
           }
 
-          emitGamesUpdate(); // 🔁 update everyone after any change
-          break;
+          io.to(game.id).emit('waiting', game);
+        } else if (game.status === 'playing') {
+          // Mark player inactive
+          player.status = 'inactive';
+
+          if (game.players.length === 2) {
+            // If only 2 players, end game and declare winner
+            game.status = 'ended';
+            game.winner = game.players.find((p) => p.userId !== player.userId)!.userId;
+            io.to(game.id).emit('gameOver', game);
+
+            addTransaction(
+              game.amount,
+              game.type,
+              game.winner,
+              game.players.filter((p) => p.userId !== game.winner).map((p) => p.userId)
+            );
+
+            games.splice(games.indexOf(game), 1);
+          } else {
+            // Notify others and continue
+            io.to(game.id).emit('playerLeft', { userId: player.userId, status: 'inactive' });
+          }
         }
+
+        emitGamesUpdate();
+        break;
       }
     });
   });
