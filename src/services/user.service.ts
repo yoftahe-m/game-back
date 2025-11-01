@@ -138,8 +138,15 @@ export const updateProfilePic = async (id: string, file: Express.Multer.File) =>
 };
 
 // update profile
-export const updateName = async (id: string, full_name: string,phone:string,) => {
-  const { data, error } = await supabase.from('users').update({ full_name }).eq('id', id).select().single();
+export const updateProfile = async (id: string, full_name: string, phone: string, file?: Express.Multer.File | undefined) => {
+  const updateData: { full_name: string; phone: string; picture?: string } = { full_name, phone };
+  if (file) {
+    const pic = await uploadImage(file, id, 'profile-pics');
+    updateData.picture = pic;
+  }
+
+  console.log(updateData)
+  const { data, error } = await supabase.from('users').update(updateData).eq('id', id).select().single();
 
   if (error) throw error;
 
