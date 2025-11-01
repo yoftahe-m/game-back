@@ -6,6 +6,7 @@ import { getMovablePins, handlePinCollision, movePiece } from '@/utils/ludo';
 import { PinColor } from '@/types/ludo';
 import { shuffle, createDeck } from '@/utils/crazy';
 import { addTransaction, checkBalance } from '@/utils/transaction';
+import { supabaseAdmin } from '@/config/supabase';
 
 const games: {
   id: string;
@@ -46,6 +47,26 @@ export const setupGameSocket = (io: Server) => {
     socket.on('games:get', () => {
       emitGamesUpdate();
     });
+
+        // Handle token refresh
+    socket.on('refresh_token', async (newToken: string) => {
+      try {
+        const { data, error } = await supabaseAdmin.auth.getUser(newToken);
+        if (error || !data?.user) {
+          socket.emit('error', 'Invalid or expired token');
+          return socket.disconnect(true);
+        }
+
+        // Update user info on the same socket
+        socket.data.userId = data.user.id;
+        socket.data.username = data.user.email;
+        socket.emit('refresh_ok');
+      } catch {
+        socket.emit('refresh_error', 'Auth verification failed');
+        socket.disconnect(true);
+      }
+    });
+    
     // 🟢 Create a game
     socket.on('createGame', async ({ username, type, options, amount }) => {
       console.log('creating a room', userId, username, type, options, amount);

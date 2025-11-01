@@ -1,19 +1,12 @@
-import { Request, Response } from "express";
-import {
-  register,
-  login,
-  logout,
-  fetchToken,
-  updateName,
-  updateProfilePic,
-} from "../services/user.service";
+import { Request, Response } from 'express';
+import { register, login, logout, fetchToken, updateName, updateProfilePic, updateProfile } from '../services/user.service';
 
 // Register User
 export const registerUser = async (req: Request, res: Response) => {
-  const { email, password, full_name ,phone} = req.body;
+  const { email, password, full_name, phone } = req.body;
 
   try {
-    const user = await register(email, password, full_name,phone);
+    const user = await register(email, password, full_name, phone);
     res.status(201).json(user);
   } catch (error) {
     res.status(400).json({ message: (error as Error).message });
@@ -39,7 +32,7 @@ export const loginUser = async (req: Request, res: Response) => {
 export const logoutUser = async (_req: Request, res: Response) => {
   try {
     await logout();
-    res.status(200).json({ message: "Logged out successfully" });
+    res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
     res.status(400).json({ message: (error as Error).message });
   }
@@ -75,10 +68,20 @@ export const changeProfilePic = async (req: any, res: Response) => {
   const { id } = req.user;
 
   try {
-    const response = await updateProfilePic(
-      id,
-      req.file as Express.Multer.File
-    );
+    const response = await updateProfilePic(id, req.file as Express.Multer.File);
+    res.status(200).json(response);
+  } catch (error: any) {
+    res.status(400).json({ message: (error as Error).message });
+  }
+};
+
+// change profile
+export const changeProfile = async (req: any, res: Response) => {
+  const { id } = req.user;
+  const { fullName, phone } = req.body;
+
+  try {
+    const response = await updateProfile(id, fullName, phone, req.file as Express.Multer.File);
     res.status(200).json(response);
   } catch (error: any) {
     res.status(400).json({ message: (error as Error).message });

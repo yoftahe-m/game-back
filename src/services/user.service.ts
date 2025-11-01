@@ -136,3 +136,20 @@ export const updateProfilePic = async (id: string, file: Express.Multer.File) =>
     },
   };
 };
+
+// update profile
+export const updateName = async (id: string, full_name: string,phone:string,) => {
+  const { data, error } = await supabase.from('users').update({ full_name }).eq('id', id).select().single();
+
+  if (error) throw error;
+
+  return {
+    user: {
+      id,
+      email: data.email,
+      fullName: full_name,
+      profilePic: data.picture,
+      created_at: data.created_at,
+    },
+  };
+};
