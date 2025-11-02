@@ -13,7 +13,7 @@ const games: {
   type: string;
   status: 'waiting' | 'playing' | 'ended';
   options: { [key: string]: any };
-  players: { userId: string; username: string; socketId: string; status: 'active' | 'inactive' }[];
+  players: { userId: string; username: string; picture?: string; socketId: string; status: 'active' | 'inactive' }[];
   maxPlayers: number;
   winner: string | null;
   amount: number;
@@ -68,7 +68,7 @@ export const setupGameSocket = (io: Server) => {
     });
 
     // 🟢 Create a game
-    socket.on('createGame', async ({ username, type, options, amount }) => {
+    socket.on('createGame', async ({ username, picture, type, options, amount }) => {
       console.log('creating a room', userId, username, type, options, amount);
       const roomId = `room_${uuidv4()}`;
 
@@ -118,7 +118,7 @@ export const setupGameSocket = (io: Server) => {
         type,
         status: 'waiting' as const,
         options: gameOptions,
-        players: [{ userId, username, socketId: socket.id, status: 'active' as 'active' | 'inactive' }],
+        players: [{ userId, username, picture, socketId: socket.id, status: 'active' as 'active' | 'inactive' }],
         maxPlayers,
         winner: null,
         amount,
@@ -134,15 +134,15 @@ export const setupGameSocket = (io: Server) => {
     });
 
     // 🟡 Join an existing game
-    socket.on('joinGame', async ({ username, gameId }) => {
+    socket.on('joinGame', async ({ username, picture, gameId }) => {
       const game = games.find((g) => g.id === gameId);
       console.log('joining a room', userId, username, gameId, game);
       if (!game) return socket.emit('error', 'Game not found');
-      console.log(1)
+      console.log(1);
       if (game.status !== 'waiting') return socket.emit('error', 'Game already started');
-       console.log(2)
+      console.log(2);
       if (game.players.some((p) => p.userId === userId)) return socket.emit('error', 'Already in this game');
-       console.log(3)
+      console.log(3);
       const isUserActiveInAnyGame = games.some((game) => game.players.some((player) => player.userId === userId && player.status === 'active'));
       if (isUserActiveInAnyGame) return socket.emit('error', 'Already is playing a game');
 
@@ -154,7 +154,7 @@ export const setupGameSocket = (io: Server) => {
         return;
       }
 
-      game.players.push({ userId, username, socketId: socket.id, status: 'active' });
+      game.players.push({ userId, username, picture, socketId: socket.id, status: 'active' });
       socket.join(gameId);
 
       const remaining = game.maxPlayers - game.players.length;
