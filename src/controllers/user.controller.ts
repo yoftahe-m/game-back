@@ -84,6 +84,7 @@ export const changeProfile = async (req: any, res: Response) => {
     const response = await updateProfile(id, fullName, phone, req.file as Express.Multer.File);
     res.status(200).json(response);
   } catch (error: any) {
+    console.log(error)
     res.status(400).json({ message: (error as Error).message });
   }
 };

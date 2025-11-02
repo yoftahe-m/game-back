@@ -145,18 +145,20 @@ export const updateProfile = async (id: string, full_name: string, phone: string
     updateData.picture = pic;
   }
 
-  console.log(updateData)
   const { data, error } = await supabase.from('users').update(updateData).eq('id', id).select().single();
 
   if (error) throw error;
 
   return {
     user: {
-      id,
+      id: data.id,
       email: data.email,
-      fullName: full_name,
-      profilePic: data.picture,
+      fullName: data.full_name,
+      phone: data.phone,
+      profilePic: data.picture || null,
       created_at: data.created_at,
+      coins: data.coins,
+      rewards: data.rewards,
     },
   };
 };

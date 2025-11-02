@@ -30,6 +30,6 @@ router.post('/changeName', authorizer, validateChangeName, handleValidation, cha
 
 router.post('/changeProfilePic', authorizer, upload.single('image'), changeProfilePic);
 
-router.post('/updateProfile', authorizer, upload.single('image'), changeProfile);
+router.post('/changeProfile', authorizer, upload.single('image'), changeProfile);
 
 export default router;
