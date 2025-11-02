@@ -48,7 +48,7 @@ export const setupGameSocket = (io: Server) => {
       emitGamesUpdate();
     });
 
-        // Handle token refresh
+    // Handle token refresh
     socket.on('refresh_token', async (newToken: string) => {
       try {
         const { data, error } = await supabaseAdmin.auth.getUser(newToken);
@@ -66,7 +66,7 @@ export const setupGameSocket = (io: Server) => {
         socket.disconnect(true);
       }
     });
-    
+
     // 🟢 Create a game
     socket.on('createGame', async ({ username, type, options, amount }) => {
       console.log('creating a room', userId, username, type, options, amount);
@@ -138,13 +138,17 @@ export const setupGameSocket = (io: Server) => {
       const game = games.find((g) => g.id === gameId);
       console.log('joining a room', userId, username, gameId, game);
       if (!game) return socket.emit('error', 'Game not found');
+      console.log(1)
       if (game.status !== 'waiting') return socket.emit('error', 'Game already started');
+       console.log(2)
       if (game.players.some((p) => p.userId === userId)) return socket.emit('error', 'Already in this game');
+       console.log(3)
       const isUserActiveInAnyGame = games.some((game) => game.players.some((player) => player.userId === userId && player.status === 'active'));
       if (isUserActiveInAnyGame) return socket.emit('error', 'Already is playing a game');
 
+      console.log('dont have active game');
       const response = await checkBalance(userId, game.amount);
-
+      console.log('first', response);
       if (response !== 'has enough') {
         socket.emit('error', response);
         return;
