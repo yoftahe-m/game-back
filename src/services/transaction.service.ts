@@ -41,3 +41,33 @@ export const fetchLeaderboard = async (page: number, size: number, userId: strin
 
   return { leaders: data, total: count, totalPages };
 };
+
+export const sendMoney = async (amount: number, user_id: number, person_id: string) => {
+  // get sender
+  const { data: sender, error: senderError } = await supabase
+    .from('users')
+    .select('coins')
+    .eq('user_id', user_id)
+    .single();
+
+  if (senderError || !sender) throw new Error("User not found");
+  if (sender.coins < amount) throw new Error("You don't have enough coins");
+
+  // get receiver
+  const { data: receiver, error: receiverError } = await supabase
+    .from('users')
+    .select('coins')
+    .eq('user_id', person_id)
+    .single();
+
+  if (receiverError || !receiver) throw new Error("Receiver not found");
+
+  // update both balances atomically
+  const { error: updateError } = await supabase.rpc('transfer_coins', {
+    sender_id: user_id,
+    receiver_id: person_id,
+    amount,
+  });
+
+  if (updateError) throw new Error("Transfer failed");
+};

@@ -162,3 +162,10 @@ export const updateProfile = async (id: string, full_name: string, phone: string
     },
   };
 };
+
+export const findUser = async (name: string) => {
+  const { data, error } = await supabase.from('users').select('full_name,id,picture').ilike('full_name', `${name}%`).range(0, 5);
+
+  if (error) throw new Error('failed to search for a user');
+  return data;
+};

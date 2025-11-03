@@ -1,7 +1,16 @@
 import multer from 'multer';
 import { Router } from 'express';
 
-import { loginUser, logoutUser, changeName, refreshToken, registerUser, changeProfilePic, changeProfile } from '../controllers/user.controller';
+import {
+  loginUser,
+  logoutUser,
+  changeName,
+  refreshToken,
+  registerUser,
+  changeProfilePic,
+  changeProfile,
+  searchUser,
+} from '../controllers/user.controller';
 import authorizer from '../middlewares/authorizer';
 import handleValidation from '../validators/handleValidation';
 import { validateChangeName, validateRefreshToken } from '../validators/user';
@@ -31,5 +40,7 @@ router.post('/changeName', authorizer, validateChangeName, handleValidation, cha
 router.post('/changeProfilePic', authorizer, upload.single('image'), changeProfilePic);
 
 router.post('/changeProfile', authorizer, upload.single('image'), changeProfile);
+
+router.get('/search', authorizer, searchUser);
 
 export default router;
