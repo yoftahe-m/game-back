@@ -47,7 +47,7 @@ export const sendMoney = async (amount: number, user_id: number, person_id: stri
   const { data: sender, error: senderError } = await supabase
     .from('users')
     .select('coins')
-    .eq('user_id', user_id)
+    .eq('id', user_id)
     .single();
 
   if (senderError || !sender) throw new Error("User not found");
@@ -57,7 +57,7 @@ export const sendMoney = async (amount: number, user_id: number, person_id: stri
   const { data: receiver, error: receiverError } = await supabase
     .from('users')
     .select('coins')
-    .eq('user_id', person_id)
+    .eq('id', person_id)
     .single();
 
   if (receiverError || !receiver) throw new Error("Receiver not found");

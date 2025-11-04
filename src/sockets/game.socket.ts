@@ -20,6 +20,7 @@ import {
   SCREEN_WIDTH,
   TICK_RATE,
 } from '@/constants/flappy';
+import { createCheckersBoard, isValidMove } from '@/utils/checkers';
 
 type Game = {
   id: string;
@@ -43,14 +44,14 @@ export const setupGameSocket = (io: Server) => {
         type: g.type,
         status: g.status,
         maxPlayers: g.maxPlayers,
-        players: g.players.map((p) => p.userId),
+        players: g.players,
         amount: g.amount,
       }))
     );
   };
 
   function gameLoop(game: Game) {
-      console.log("looping")
+    console.log('looping');
 
     game.options.gameTick++;
 
@@ -206,7 +207,14 @@ export const setupGameSocket = (io: Server) => {
           gameOptions = {
             gameTick: 0,
             pipes: [],
-            players: { [userId]: { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false, } },
+            players: { [userId]: { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false } },
+          };
+          break;
+        case 'Checkers':
+          gameOptions = {
+            board: createCheckersBoard(),
+            turn: userId,
+            players: [{ userId: userId, color: 'R' }],
           };
           break;
         case 'Crazy':
@@ -261,8 +269,11 @@ export const setupGameSocket = (io: Server) => {
 
       game.players.push({ userId, username, picture, socketId: socket.id, status: 'active' });
 
-      if(game.type==="Flappy"){ 
+      if (game.type === 'Flappy') {
         game.options.players[userId] = { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false };
+      }
+      if (game.type === 'Checkers') {
+        game.options.players.push({ userId, color: 'B' });
       }
 
       socket.join(gameId);
@@ -273,7 +284,7 @@ export const setupGameSocket = (io: Server) => {
       if (game.players.length === game.maxPlayers) {
         game.status = 'playing';
         io.to(gameId).emit('gameStarted', game);
-        if(game.type==="Flappy"){
+        if (game.type === 'Flappy') {
           setInterval(gameLoop, 1000 / TICK_RATE);
         }
       }
@@ -373,6 +384,21 @@ export const setupGameSocket = (io: Server) => {
           game.options.turn = game.players[playerIndex + 1].userId;
         }
       }
+      io.to(gameId).emit('gameUpdate', game);
+    });
+
+    socket.on('checkers:move', ({ gameId, from, to }) => {
+      const game = games.find((g) => g.id === gameId);
+      if (!game) return socket.emit('error', 'Game not found');
+      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
+      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
+      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
+
+      const piece = game.options.board[from.y][from.x];
+      const player = game.options.players.find((p: any) => p.userId === userId).color;
+
+      if (!isValidMove(game.options.board, from, to, player)) return socket.emit('error', 'It is not a valid move');
+
       io.to(gameId).emit('gameUpdate', game);
     });
 
