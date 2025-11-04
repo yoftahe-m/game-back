@@ -7,8 +7,21 @@ import { PinColor } from '@/types/ludo';
 import { shuffle, createDeck } from '@/utils/crazy';
 import { addTransaction, checkBalance } from '@/utils/transaction';
 import { supabaseAdmin } from '@/config/supabase';
+import {
+  BIRD_HEIGHT,
+  BIRD_WIDTH,
+  GRAVITY,
+  JUMP_VELOCITY,
+  PIPE_GAP,
+  PIPE_SPAWN_INTERVAL,
+  PIPE_SPEED,
+  PIPE_WIDTH,
+  SCREEN_HEIGHT,
+  SCREEN_WIDTH,
+  TICK_RATE,
+} from '@/constants/flappy';
 
-const games: {
+type Game = {
   id: string;
   type: string;
   status: 'waiting' | 'playing' | 'ended';
@@ -17,7 +30,8 @@ const games: {
   maxPlayers: number;
   winner: string | null;
   amount: number;
-}[] = [];
+};
+const games: Game[] = [];
 
 export const setupGameSocket = (io: Server) => {
   // 🔁 Helper: emit updated games list to everyone
@@ -34,6 +48,90 @@ export const setupGameSocket = (io: Server) => {
       }))
     );
   };
+
+  function gameLoop(game: Game) {
+      console.log("looping")
+
+    game.options.gameTick++;
+
+    // 1. --- Spawn New Pipes ---
+    if (game.options.gameTick % PIPE_SPAWN_INTERVAL === 0) {
+      const minTopHeight = 50;
+      const maxTopHeight = SCREEN_HEIGHT - PIPE_GAP - 50;
+      const topHeight = Math.floor(Math.random() * (maxTopHeight - minTopHeight + 1)) + minTopHeight;
+
+      game.options.pipes.push({
+        id: game.options.gameTick, // Use tick as a simple unique ID
+        x: SCREEN_WIDTH,
+        topHeight: topHeight,
+        passedBy: [], // Keep track of which players passed this pipe
+      });
+    }
+
+    // 2. --- Move Pipes ---
+    // Iterate backwards to safely remove items
+    for (let i = game.options.pipes.length - 1; i >= 0; i--) {
+      const pipe = game.options.pipes[i];
+      pipe.x -= PIPE_SPEED;
+
+      // Remove pipe if it's off-screen
+      if (pipe.x < -PIPE_WIDTH) {
+        game.options.pipes.splice(i, 1);
+      }
+    }
+
+    // 3. --- Update Players (Physics, Collision, Scoring) ---
+    for (const playerId in game.options.players) {
+      const player = game.options.players[playerId];
+
+      // Don't update dead players
+      if (player.isDead) continue;
+
+      // Apply gravity
+      player.velocity += GRAVITY;
+      player.y += player.velocity;
+
+      // Check for ground collision
+      if (player.y + BIRD_HEIGHT > SCREEN_HEIGHT) {
+        player.isDead = true;
+        continue;
+      }
+      // Check for ceiling collision
+      if (player.y < 0) {
+        player.isDead = true;
+        continue;
+      }
+
+      // --- NEW: Collision Detection ---
+      for (const pipe of game.options.pipes) {
+        // Check for X-axis overlap (is the bird between the pipe's front and back?)
+        const isOverlappingX = player.x + BIRD_WIDTH > pipe.x && player.x < pipe.x + PIPE_WIDTH;
+
+        // Check for Y-axis overlap (is the bird hitting the top or bottom pipe?)
+        const isHittingTop = player.y < pipe.topHeight;
+        const isHittingBottom = player.y + BIRD_HEIGHT > pipe.topHeight + PIPE_GAP;
+
+        const isOverlappingY = isHittingTop || isHittingBottom;
+
+        if (isOverlappingX && isOverlappingY) {
+          player.isDead = true;
+          break; // No need to check other pipes for this player
+        }
+
+        // --- NEW: Scoring ---
+        // Check if player passed the pipe
+        // We check if the pipe's *back edge* is now to the *left* of the player's *front edge*
+        if (!pipe.passedBy.includes(playerId) && pipe.x + PIPE_WIDTH < player.x) {
+          player.score++;
+          pipe.passedBy.push(playerId); // Mark as passed for this player
+        }
+      }
+    }
+
+    // 4. --- Broadcast State ---
+    // Send the *entire* game state to all clients
+    io.emit('flappy:Update', game);
+  }
 
   io.on('connection', (socket: Socket) => {
     console.log('⚡ Client connected:', socket.id);
@@ -104,6 +202,13 @@ export const setupGameSocket = (io: Server) => {
         case 'Tic Tac Toe':
           gameOptions = { board: createEmptyBoard(), turn: userId };
           break;
+        case 'Flappy':
+          gameOptions = {
+            gameTick: 0,
+            pipes: [],
+            players: { [userId]: { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false, } },
+          };
+          break;
         case 'Crazy':
           // let deck = shuffle(createDeck());
           gameOptions = { drawPenalty: 0, discard: [], turn: userId };
@@ -155,6 +260,11 @@ export const setupGameSocket = (io: Server) => {
       }
 
       game.players.push({ userId, username, picture, socketId: socket.id, status: 'active' });
+
+      if(game.type==="Flappy"){ 
+        game.options.players[userId] = { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false };
+      }
+
       socket.join(gameId);
 
       const remaining = game.maxPlayers - game.players.length;
@@ -163,6 +273,9 @@ export const setupGameSocket = (io: Server) => {
       if (game.players.length === game.maxPlayers) {
         game.status = 'playing';
         io.to(gameId).emit('gameStarted', game);
+        if(game.type==="Flappy"){
+          setInterval(gameLoop, 1000 / TICK_RATE);
+        }
       }
 
       emitGamesUpdate(); // 🔁 update everyone
@@ -215,6 +328,19 @@ export const setupGameSocket = (io: Server) => {
       }
 
       emitGamesUpdate();
+    });
+
+    socket.on('flappy:jump', ({ gameId }) => {
+      const game = games.find((g) => g.id === gameId);
+      if (!game) return socket.emit('error', 'Game not found');
+      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
+      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
+
+      const player = game.options.players[userId];
+      // Only let the player jump if they exist and are not dead
+      if (player && !player.isDead) {
+        player.velocity = JUMP_VELOCITY;
+      }
     });
 
     // 🎲 Ludo: roll die
