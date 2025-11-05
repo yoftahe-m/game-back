@@ -20,8 +20,7 @@ import {
   SCREEN_WIDTH,
   TICK_RATE,
 } from '@/constants/flappy';
-import { createCheckersBoard, isValidMove } from '@/utils/checkers';
-
+import { attemptMove, cloneBoard, createCheckersBoard, getAllCaptures, getCapturesFrom, getPossibleMoves } from '@/utils/checkers';
 type Game = {
   id: string;
   type: string;
@@ -214,7 +213,8 @@ export const setupGameSocket = (io: Server) => {
           gameOptions = {
             board: createCheckersBoard(),
             turn: userId,
-            players: [{ userId: userId, color: 'R' }],
+            players: [{ userId: userId, color: 'red' }],
+            mandatoryCaptures: [],
           };
           break;
         case 'Crazy':
@@ -273,7 +273,7 @@ export const setupGameSocket = (io: Server) => {
         game.options.players[userId] = { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false };
       }
       if (game.type === 'Checkers') {
-        game.options.players.push({ userId, color: 'B' });
+        game.options.players.push({ userId, color: 'black' });
       }
 
       socket.join(gameId);
@@ -388,18 +388,106 @@ export const setupGameSocket = (io: Server) => {
     });
 
     socket.on('checkers:move', ({ gameId, from, to }) => {
+      console.log('moving puck', userId, gameId, from, to);
       const game = games.find((g) => g.id === gameId);
       if (!game) return socket.emit('error', 'Game not found');
       if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
       if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
 
+      console.log(userId, game.players, game.options.players);
+      const playerColor = game.options.players.find((p: any) => p.userId === userId).color;
+
       const piece = game.options.board[from.y][from.x];
-      const player = game.options.players.find((p: any) => p.userId === userId).color;
+      console.log(playerColor, piece);
+      if (!piece || piece.color !== playerColor) return socket.emit('error', 'Invalid piece selection.');
 
-      if (!isValidMove(game.options.board, from, to, player)) return socket.emit('error', 'It is not a valid move');
+      const allCaptures = getAllCaptures(game.options.board, playerColor);
 
-      io.to(gameId).emit('gameUpdate', game);
+      const isJump = Math.abs(from.x - to.x) === 2 && Math.abs(from.y - to.y) === 2;
+      const isSimpleMove = Math.abs(from.x - to.x) === 1 && Math.abs(from.y - to.y) === 1;
+
+      if (allCaptures.length > 0 && !isJump) return socket.emit('error', 'A capture is available. You must capture.');
+
+      let newBoard = cloneBoard(game.options.board);
+      let turnOver = true;
+
+      if (isJump) {
+        const midX = (from.x + to.x) / 2;
+        const midY = (from.y + to.y) / 2;
+        const jumped = game.options.board[midY][midX];
+
+        if (!jumped || jumped.color === playerColor) return socket.emit('error', 'Illegal jump: No opponent piece to jump over.');
+
+        // Perform jump
+        newBoard[from.y][from.x] = null;
+        newBoard[midY][midX] = null;
+        newBoard[to.y][to.x] = { ...piece };
+
+        // Kinging
+        if ((playerColor === 'red' && to.y === 0) || (playerColor === 'black' && to.y === 7)) {
+          newBoard[to.y][to.x]!.king = true;
+        }
+
+        // Check for multi-jump
+        const moreCaptures = getCapturesFrom(newBoard, to.x, to.y);
+        if (moreCaptures.length > 0) {
+          turnOver = false;
+        }
+      } else if (isSimpleMove) {
+        // Validate direction for non-king
+        const dy = to.y - from.y;
+        if (!piece.king) {
+          if (piece.color === 'red' && dy !== -1) return socket.emit('error', 'Red can only move up.');
+          if (piece.color === 'black' && dy !== 1) return socket.emit('error', 'Black can only move down.');
+        }
+
+        // Apply simple move
+        newBoard[from.y][from.x] = null;
+        newBoard[to.y][to.x] = { ...piece };
+
+        // Kinging
+        if ((playerColor === 'red' && to.y === 0) || (playerColor === 'black' && to.y === 7)) {
+          newBoard[to.y][to.x]!.king = true;
+        }
+      } else {
+        return socket.emit('error', 'Invalid move distance.');
+      }
+
+      // Determine next player
+      const nextPlayer = turnOver ? (playerColor === 'red' ? 'black' : 'red') : playerColor;
+
+      console.log(nextPlayer);
+      // Check for winner (no moves available for next player)
+      const nextPlayerCaptures = getAllCaptures(newBoard, nextPlayer);
+      const hasMoves =
+        nextPlayerCaptures.length > 0 ||
+        newBoard.some((row, y) => row.some((cell, x) => cell && cell.color === nextPlayer && getPossibleMoves(newBoard, x, y).length > 0));
+
+      const winnerColor = hasMoves ? null : playerColor;
+
+      game.options.board = newBoard;
+      game.options.mandatoryCaptures = !turnOver ? [{ x: to.x, y: to.y }] : [];
+      game.options.turn = game.options.players.find((p: any) => p.color === nextPlayer).userId;
+
+      if (winnerColor) {
+        game.status = 'ended';
+        const winner = game.options.players.find((p: any) => p.color === winner).userId;
+        game.winner = winner;
+        io.to(gameId).emit('gameOver', game);
+        addTransaction(
+          game.amount,
+          game.type,
+          winner,
+          game.players.filter((p) => p.userId !== winner).map((p) => p.userId)
+        );
+        games.splice(games.indexOf(game), 1);
+      } else {
+        game.options.turn = game.options.players.find((p: any) => p.color === nextPlayer).userId;
+        io.to(gameId).emit('gameUpdate', game);
+      }
+
+      emitGamesUpdate();
     });
 
     socket.on('ludo:movePin', ({ gameId, pinHome }) => {
