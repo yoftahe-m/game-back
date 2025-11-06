@@ -6,8 +6,8 @@ export const registerUser = async (req: Request, res: Response) => {
   const { email, password, full_name, phone } = req.body;
 
   try {
-    const user = await register(email, password, full_name, phone);
-    res.status(201).json(user);
+    const response = await register(email, password, full_name, phone);
+    res.status(201).json(response);
   } catch (error) {
     res.status(400).json({ message: (error as Error).message });
   }
@@ -17,13 +17,10 @@ export const registerUser = async (req: Request, res: Response) => {
 export const loginUser = async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  console.log(email, password);
   try {
-    const user = await login(email, password);
-    console.log(user);
-    res.status(200).json(user);
+    const response = await login(email, password);
+    res.status(200).json(response);
   } catch (error) {
-    console.log(error);
     res.status(400).json({ message: (error as Error).message });
   }
 };

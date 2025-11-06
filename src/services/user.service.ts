@@ -95,9 +95,13 @@ export const fetchToken = async (refreshToken: string) => {
 
   if (error) throw error;
 
+  const { data: user, error: userError } = await supabase.from('users').select('coins').eq('id', data?.user?.id).single();
+
+  if (userError) throw userError;
   return {
     accessToken: data.session?.access_token,
     refreshToken: data.session?.refresh_token,
+    coins: user?.coins,
   };
 };
 
