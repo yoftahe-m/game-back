@@ -21,6 +21,8 @@ import {
   TICK_RATE,
 } from '@/constants/flappy';
 import { attemptMove, cloneBoard, createCheckersBoard, getAllCaptures, getCapturesFrom, getPossibleMoves } from '@/utils/checkers';
+import { Chess } from 'chess.js';
+
 type Game = {
   id: string;
   type: string;
@@ -30,6 +32,7 @@ type Game = {
   maxPlayers: number;
   winner: string | null;
   amount: number;
+  privateSettings: any;
 };
 const games: Game[] = [];
 
@@ -189,6 +192,8 @@ export const setupGameSocket = (io: Server) => {
 
       const maxPlayers = type === 'ludo' ? options?.maxPlayers || 2 : 2;
 
+      let settings = null;
+
       let gameOptions = {};
       switch (type) {
         case 'Ludo':
@@ -208,6 +213,15 @@ export const setupGameSocket = (io: Server) => {
             pipes: [],
             players: { [userId]: { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false } },
           };
+          break;
+        case 'Chess':
+          const chessGame = new Chess();
+          gameOptions = {
+            board: chessGame.board(),
+            turn: userId,
+            players: [{ userId: userId, color: 'w' }],
+          };
+          settings = chessGame;
           break;
         case 'Checkers':
           gameOptions = {
@@ -235,13 +249,15 @@ export const setupGameSocket = (io: Server) => {
         maxPlayers,
         winner: null,
         amount,
+        privateSettings: settings,
       };
 
       games.push(newGame);
       socket.join(roomId);
 
       console.log(`🎮 New ${type} game created: ${roomId} (${maxPlayers} players)`);
-      socket.emit('waiting', newGame);
+      const { privateSettings, ...gameWithoutPrivateSettings } = newGame;
+      socket.emit('waiting', gameWithoutPrivateSettings);
 
       emitGamesUpdate(); // 🔁 update everyone
     });
@@ -275,15 +291,19 @@ export const setupGameSocket = (io: Server) => {
       if (game.type === 'Checkers') {
         game.options.players.push({ userId, color: 'black' });
       }
+      if (game.type === 'Chess') {
+        game.options.players.push({ userId, color: 'b' });
+      }
 
       socket.join(gameId);
 
       const remaining = game.maxPlayers - game.players.length;
-      if (remaining > 0) io.to(gameId).emit('waiting', game);
+      const { privateSettings, ...gameWithoutPrivateSettings } = game;
+      if (remaining > 0) io.to(gameId).emit('waiting', gameWithoutPrivateSettings);
 
       if (game.players.length === game.maxPlayers) {
         game.status = 'playing';
-        io.to(gameId).emit('gameStarted', game);
+        io.to(gameId).emit('gameStarted', gameWithoutPrivateSettings);
         if (game.type === 'Flappy') {
           setInterval(gameLoop, 1000 / TICK_RATE);
         }
@@ -341,6 +361,48 @@ export const setupGameSocket = (io: Server) => {
       emitGamesUpdate();
     });
 
+    socket.on('chess:move', ({ gameId, from, to }) => {
+      const game = games.find((g) => g.id === gameId);
+      if (!game) return socket.emit('error', 'Game not found');
+      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
+      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
+      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
+
+      try {
+        const move = game.privateSettings.move({ from, to });
+        if (!move) return socket.emit('error', 'invalidMove');
+      } catch (err) {
+        return socket.emit('error', 'invalidMove');
+      }
+
+      game.options.board = game.privateSettings.board();
+
+      const possibleMove = game.privateSettings.moves();
+      game.options.turn = game.options.players.find((p: any) => p.userId !== userId).userId;
+      const { privateSettings, ...gameWithoutPrivateSettings } = game;
+
+      if (game.privateSettings.isDraw()) {
+        game.winner = 'draw';
+        io.to(gameId).emit('gameOver', gameWithoutPrivateSettings);
+        games.splice(games.indexOf(game), 1);
+      } else if (game.privateSettings.isGameOver() || possibleMove.length === 0) {
+        const winner = game.options.players.find((p: any) => p.color !== game.privateSettings.turn()).userId;
+        game.winner = winner;
+        io.to(gameId).emit('gameOver', gameWithoutPrivateSettings);
+        addTransaction(
+          game.amount,
+          game.type,
+          winner,
+          game.players.filter((p) => p.userId !== winner).map((p) => p.userId)
+        );
+        games.splice(games.indexOf(game), 1);
+      } else {
+        io.to(gameId).emit('gameUpdate', gameWithoutPrivateSettings);
+      }
+
+      emitGamesUpdate();
+    });
+
     socket.on('flappy:jump', ({ gameId }) => {
       const game = games.find((g) => g.id === gameId);
       if (!game) return socket.emit('error', 'Game not found');
@@ -350,7 +412,7 @@ export const setupGameSocket = (io: Server) => {
       const player = game.options.players[userId];
       // Only let the player jump if they exist and are not dead
       if (player && !player.isDead) {
-        player.velocity = JUMP_VELOCITY;
+        player.velocity = JUMP_VELOCITY; 
       }
     });
 
@@ -472,7 +534,7 @@ export const setupGameSocket = (io: Server) => {
 
       if (winnerColor) {
         game.status = 'ended';
-        const winner = game.options.players.find((p: any) => p.color === winner).userId;
+        const winner = game.options.players.find((p: any) => p.color === winnerColor).userId;
         game.winner = winner;
         io.to(gameId).emit('gameOver', game);
         addTransaction(
