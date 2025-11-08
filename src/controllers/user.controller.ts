@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { register, login, logout, fetchToken, updateName, updateProfilePic, updateProfile, findUser } from '../services/user.service';
+import { register, login, logout, fetchToken, updateName, updateProfilePic, updateProfile, findUser, addedUsers } from '../services/user.service';
 
 // Register User
 export const registerUser = async (req: Request, res: Response) => {
@@ -91,6 +91,19 @@ export const searchUser = async (req: any, res: Response) => {
 
   try {
     const response = await findUser(name);
+    res.status(200).json(response);
+  } catch (error: any) {
+    console.log(error);
+    res.status(400).json({ message: (error as Error).message });
+  }
+};
+
+export const referredUser = async (req: any, res: Response) => {
+  const { id: userId } = req.user;
+  const { page, size } = req.query;
+
+  try {
+    const response = await addedUsers(Number(page), Number(size), userId);
     res.status(200).json(response);
   } catch (error: any) {
     console.log(error);

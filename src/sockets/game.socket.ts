@@ -52,6 +52,18 @@ export const setupGameSocket = (io: Server) => {
     );
   };
 
+  const startTurnTimer = (gameId: string) => {
+    const game = games.find((g) => g.id === gameId)!;
+    clearTimeout(game.options.timer);
+    game.options.timer = setTimeout(() => {
+      const winner = game.players.find((p) => p.userId !== game.options.turn)!.userId;
+      game.winner = winner;
+      const { privateSettings, ...gameWithoutPrivateSettings } = game;
+      io.to(gameId).emit('gameOver', gameWithoutPrivateSettings);
+      games.splice(games.indexOf(game), 1);
+    }, 15000);
+  };
+
   function gameLoop(game: Game) {
     console.log('looping');
 
@@ -304,9 +316,10 @@ export const setupGameSocket = (io: Server) => {
       if (game.players.length === game.maxPlayers) {
         game.status = 'playing';
         io.to(gameId).emit('gameStarted', gameWithoutPrivateSettings);
-        if (game.type === 'Flappy') {
-          setInterval(gameLoop, 1000 / TICK_RATE);
-        }
+        startTurnTimer(gameId);
+        // if (game.type === 'Flappy') {
+        //   setInterval(gameLoop, 1000 / TICK_RATE);
+        // }
       }
 
       emitGamesUpdate(); // 🔁 update everyone
@@ -331,8 +344,8 @@ export const setupGameSocket = (io: Server) => {
           emitGamesUpdate();
           return;
         }
-
-        io.to(gameId).emit('waiting', game);
+        const { privateSettings, ...gameWithoutPrivateSettings } = game;
+        io.to(gameId).emit('waiting', gameWithoutPrivateSettings);
       } else if (game.status === 'playing') {
         // Set leaving player to inactive
         player.status = 'inactive';
@@ -342,7 +355,8 @@ export const setupGameSocket = (io: Server) => {
           // If only 2 players, end the game and declare the other as winner
           game.status = 'ended';
           game.winner = game.players.find((p) => p.userId !== userId)!.userId;
-          io.to(gameId).emit('gameOver', game);
+          const { privateSettings, ...gameWithoutPrivateSettings } = game;
+          io.to(gameId).emit('gameOver', gameWithoutPrivateSettings);
 
           addTransaction(
             game.amount,
@@ -412,7 +426,7 @@ export const setupGameSocket = (io: Server) => {
       const player = game.options.players[userId];
       // Only let the player jump if they exist and are not dead
       if (player && !player.isDead) {
-        player.velocity = JUMP_VELOCITY; 
+        player.velocity = JUMP_VELOCITY;
       }
     });
 
@@ -601,6 +615,7 @@ export const setupGameSocket = (io: Server) => {
       if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
       if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
       if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
+      clearTimeout(game.options.timer);
       if (game.options.board[cell]) return socket.emit('error', 'Cell taken');
       game.options.board[cell] = userId;
       const winner = checkWinner(game.options.board);
@@ -624,6 +639,7 @@ export const setupGameSocket = (io: Server) => {
       } else {
         game.options.turn = game.players.find((p) => p.userId !== userId)!.userId;
         io.to(gameId).emit('gameUpdate', game);
+        startTurnTimer(gameId);
       }
 
       emitGamesUpdate(); // 🔁 update everyone

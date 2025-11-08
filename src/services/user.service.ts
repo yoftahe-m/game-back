@@ -173,3 +173,23 @@ export const findUser = async (name: string) => {
   if (error) throw new Error('failed to search for a user');
   return data;
 };
+
+export const addedUsers = async (page: number, size: number, userId: string) => {
+  const pageSize = size || 10;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data, error, count } = await supabase
+    .from('referred_wins')
+    .select('*', {
+      count: 'exact',
+    })
+    .eq('user_id', userId)
+    .range(from, to);
+
+  if (error) throw error;
+  const totalPages = Math.ceil(count! / pageSize);
+
+
+  return { referredUsers: data, total: count, totalPages };
+};

@@ -10,6 +10,7 @@ import {
   changeProfilePic,
   changeProfile,
   searchUser,
+  referredUser,
 } from '../controllers/user.controller';
 import authorizer from '../middlewares/authorizer';
 import handleValidation from '../validators/handleValidation';
@@ -42,5 +43,6 @@ router.post('/changeProfilePic', authorizer, upload.single('image'), changeProfi
 router.post('/changeProfile', authorizer, upload.single('image'), changeProfile);
 
 router.get('/search', authorizer, searchUser);
+router.get('/referred', authorizer, referredUser);
 
 export default router;
