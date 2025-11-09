@@ -190,6 +190,13 @@ export const addedUsers = async (page: number, size: number, userId: string) => 
   if (error) throw error;
   const totalPages = Math.ceil(count! / pageSize);
 
-
   return { referredUsers: data, total: count, totalPages };
+};
+
+export const fetchCoins = async (userId: string) => {
+  const { data: user, error: userError } = await supabase.from('users').select('coins').eq('id', userId).single();
+
+  if (userError) throw userError;
+
+  return { ...user };
 };

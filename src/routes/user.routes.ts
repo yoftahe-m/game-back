@@ -11,6 +11,7 @@ import {
   changeProfile,
   searchUser,
   referredUser,
+  refreshCoin,
 } from '../controllers/user.controller';
 import authorizer from '../middlewares/authorizer';
 import handleValidation from '../validators/handleValidation';
@@ -44,5 +45,6 @@ router.post('/changeProfile', authorizer, upload.single('image'), changeProfile)
 
 router.get('/search', authorizer, searchUser);
 router.get('/referred', authorizer, referredUser);
+router.get('/refreshCoin', authorizer, refreshCoin);
 
 export default router;

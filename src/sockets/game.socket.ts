@@ -54,14 +54,14 @@ export const setupGameSocket = (io: Server) => {
 
   const startTurnTimer = (gameId: string) => {
     const game = games.find((g) => g.id === gameId)!;
-    clearTimeout(game.options.timer);
-    game.options.timer = setTimeout(() => {
-      const winner = game.players.find((p) => p.userId !== game.options.turn)!.userId;
-      game.winner = winner;
-      const { privateSettings, ...gameWithoutPrivateSettings } = game;
-      io.to(gameId).emit('gameOver', gameWithoutPrivateSettings);
-      games.splice(games.indexOf(game), 1);
-    }, 15000);
+    // clearTimeout(game.options.timer);
+    // game.options.timer = setTimeout(() => {
+    //   const winner = game.players.find((p) => p.userId !== game.options.turn)!.userId;
+    //   game.winner = winner;
+    //   const { privateSettings, ...gameWithoutPrivateSettings } = game;
+    //   io.to(gameId).emit('gameOver', gameWithoutPrivateSettings);
+    //   games.splice(games.indexOf(game), 1);
+    // }, 15000);
   };
 
   function gameLoop(game: Game) {
