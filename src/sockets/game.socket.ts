@@ -1,27 +1,15 @@
+import { Chess } from 'chess.js';
 import { v4 as uuidv4 } from 'uuid';
 import { Server, Socket } from 'socket.io';
-import { checkWinner, createEmptyBoard } from '@/utils/ticTacToe';
+
+import { createEmptyBoard, selectCell } from '@/utils/ticTacToe';
 import { pins } from '@/constants/ludo';
-import { getMovablePins, handlePinCollision, movePiece } from '@/utils/ludo';
-import { PinColor } from '@/types/ludo';
-import { shuffle, createDeck } from '@/utils/crazy';
+import { getMovablePins, handlePinCollision, ludoMove, movePiece, rollDie } from '@/utils/ludo';
 import { addTransaction, checkBalance } from '@/utils/transaction';
 import { supabaseAdmin } from '@/config/supabase';
-import {
-  BIRD_HEIGHT,
-  BIRD_WIDTH,
-  GRAVITY,
-  JUMP_VELOCITY,
-  PIPE_GAP,
-  PIPE_SPAWN_INTERVAL,
-  PIPE_SPEED,
-  PIPE_WIDTH,
-  SCREEN_HEIGHT,
-  SCREEN_WIDTH,
-  TICK_RATE,
-} from '@/constants/flappy';
-import { attemptMove, cloneBoard, createCheckersBoard, getAllCaptures, getCapturesFrom, getPossibleMoves } from '@/utils/checkers';
-import { Chess } from 'chess.js';
+
+import { checkersMove, cloneBoard, createCheckersBoard, getAllCaptures, getCapturesFrom, getPossibleMoves } from '@/utils/checkers';
+import { chessMove } from '@/utils/chess';
 
 type Game = {
   id: string;
@@ -64,95 +52,10 @@ export const setupGameSocket = (io: Server) => {
     // }, 15000);
   };
 
-  function gameLoop(game: Game) {
-    console.log('looping');
-
-    game.options.gameTick++;
-
-    // 1. --- Spawn New Pipes ---
-    if (game.options.gameTick % PIPE_SPAWN_INTERVAL === 0) {
-      const minTopHeight = 50;
-      const maxTopHeight = SCREEN_HEIGHT - PIPE_GAP - 50;
-      const topHeight = Math.floor(Math.random() * (maxTopHeight - minTopHeight + 1)) + minTopHeight;
-
-      game.options.pipes.push({
-        id: game.options.gameTick, // Use tick as a simple unique ID
-        x: SCREEN_WIDTH,
-        topHeight: topHeight,
-        passedBy: [], // Keep track of which players passed this pipe
-      });
-    }
-
-    // 2. --- Move Pipes ---
-    // Iterate backwards to safely remove items
-    for (let i = game.options.pipes.length - 1; i >= 0; i--) {
-      const pipe = game.options.pipes[i];
-      pipe.x -= PIPE_SPEED;
-
-      // Remove pipe if it's off-screen
-      if (pipe.x < -PIPE_WIDTH) {
-        game.options.pipes.splice(i, 1);
-      }
-    }
-
-    // 3. --- Update Players (Physics, Collision, Scoring) ---
-    for (const playerId in game.options.players) {
-      const player = game.options.players[playerId];
-
-      // Don't update dead players
-      if (player.isDead) continue;
-
-      // Apply gravity
-      player.velocity += GRAVITY;
-      player.y += player.velocity;
-
-      // Check for ground collision
-      if (player.y + BIRD_HEIGHT > SCREEN_HEIGHT) {
-        player.isDead = true;
-        continue;
-      }
-      // Check for ceiling collision
-      if (player.y < 0) {
-        player.isDead = true;
-        continue;
-      }
-
-      // --- NEW: Collision Detection ---
-      for (const pipe of game.options.pipes) {
-        // Check for X-axis overlap (is the bird between the pipe's front and back?)
-        const isOverlappingX = player.x + BIRD_WIDTH > pipe.x && player.x < pipe.x + PIPE_WIDTH;
-
-        // Check for Y-axis overlap (is the bird hitting the top or bottom pipe?)
-        const isHittingTop = player.y < pipe.topHeight;
-        const isHittingBottom = player.y + BIRD_HEIGHT > pipe.topHeight + PIPE_GAP;
-
-        const isOverlappingY = isHittingTop || isHittingBottom;
-
-        if (isOverlappingX && isOverlappingY) {
-          player.isDead = true;
-          break; // No need to check other pipes for this player
-        }
-
-        // --- NEW: Scoring ---
-        // Check if player passed the pipe
-        // We check if the pipe's *back edge* is now to the *left* of the player's *front edge*
-        if (!pipe.passedBy.includes(playerId) && pipe.x + PIPE_WIDTH < player.x) {
-          player.score++;
-          pipe.passedBy.push(playerId); // Mark as passed for this player
-        }
-      }
-    }
-
-    // 4. --- Broadcast State ---
-    // Send the *entire* game state to all clients
-    io.emit('flappy:Update', game);
-  }
-
   io.on('connection', (socket: Socket) => {
     console.log('⚡ Client connected:', socket.id);
 
     const { userId } = socket.data;
-    console.log(socket.data);
 
     // Send current games list on connect
     socket.emit('games:update', games);
@@ -181,13 +84,19 @@ export const setupGameSocket = (io: Server) => {
     });
 
     // 🟢 Create a game
-    socket.on('createGame', async ({ username, picture, type, options, amount }) => {
-      console.log('creating a room', userId, username, type, options, amount);
+    socket.on('createGame', async ({ username, picture, type, options, amount, maxPlayers, winPinCount }) => {
+      console.log('creating a room', typeof maxPlayers, winPinCount);
       const roomId = `room_${uuidv4()}`;
 
-      if (type === 'ludo' && ![2, 3, 4].includes(options?.maxPlayers)) {
-        socket.emit('error', 'Ludo supports only 2, 3, or 4 players');
-        return;
+      if (type === 'Ludo') {
+        if (![2, 4].includes(maxPlayers)) {
+          socket.emit('error', 'Ludo supports only 2 or 4 players');
+          return;
+        }
+        if (![1, 2, 4].includes(winPinCount)) {
+          socket.emit('error', 'Ludo supports only 1, 2 or 4 win pin count');
+          return;
+        }
       }
 
       if (amount < 5) {
@@ -202,7 +111,11 @@ export const setupGameSocket = (io: Server) => {
         return;
       }
 
-      const maxPlayers = type === 'ludo' ? options?.maxPlayers || 2 : 2;
+      console.log(maxPlayers);
+
+      const players = type === 'Ludo' && maxPlayers ? maxPlayers : 2;
+
+      console.log('first', players);
 
       let settings = null;
 
@@ -210,22 +123,17 @@ export const setupGameSocket = (io: Server) => {
       switch (type) {
         case 'Ludo':
           gameOptions = {
-            pins: maxPlayers === 2 ? pins.filter((p) => p.color === 'red' || p.color === 'yellow') : pins,
+            pins: players === 2 ? pins.filter((p) => p.color === 'red' || p.color === 'yellow') : pins,
             roll: 0,
             rolledBy: '',
             turn: userId,
+            winPinCount,
           };
           break;
         case 'Tic Tac Toe':
           gameOptions = { board: createEmptyBoard(), turn: userId };
           break;
-        case 'Flappy':
-          gameOptions = {
-            gameTick: 0,
-            pipes: [],
-            players: { [userId]: { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false } },
-          };
-          break;
+
         case 'Chess':
           const chessGame = new Chess();
           gameOptions = {
@@ -258,7 +166,7 @@ export const setupGameSocket = (io: Server) => {
         status: 'waiting' as const,
         options: gameOptions,
         players: [{ userId, username, picture, socketId: socket.id, status: 'active' as 'active' | 'inactive' }],
-        maxPlayers,
+        maxPlayers: players,
         winner: null,
         amount,
         privateSettings: settings,
@@ -267,7 +175,7 @@ export const setupGameSocket = (io: Server) => {
       games.push(newGame);
       socket.join(roomId);
 
-      console.log(`🎮 New ${type} game created: ${roomId} (${maxPlayers} players)`);
+      console.log(`🎮 New ${type} game created: ${roomId} (${players} players)`);
       const { privateSettings, ...gameWithoutPrivateSettings } = newGame;
       socket.emit('waiting', gameWithoutPrivateSettings);
 
@@ -297,9 +205,6 @@ export const setupGameSocket = (io: Server) => {
 
       game.players.push({ userId, username, picture, socketId: socket.id, status: 'active' });
 
-      if (game.type === 'Flappy') {
-        game.options.players[userId] = { id: socket.id, x: 100, y: 300, velocity: 0, score: 0, isDead: false };
-      }
       if (game.type === 'Checkers') {
         game.options.players.push({ userId, color: 'black' });
       }
@@ -309,6 +214,7 @@ export const setupGameSocket = (io: Server) => {
 
       socket.join(gameId);
 
+      console.log('pins', game.options.pins);
       const remaining = game.maxPlayers - game.players.length;
       const { privateSettings, ...gameWithoutPrivateSettings } = game;
       if (remaining > 0) io.to(gameId).emit('waiting', gameWithoutPrivateSettings);
@@ -317,9 +223,6 @@ export const setupGameSocket = (io: Server) => {
         game.status = 'playing';
         io.to(gameId).emit('gameStarted', gameWithoutPrivateSettings);
         startTurnTimer(gameId);
-        // if (game.type === 'Flappy') {
-        //   setInterval(gameLoop, 1000 / TICK_RATE);
-        // }
       }
 
       emitGamesUpdate(); // 🔁 update everyone
@@ -375,274 +278,123 @@ export const setupGameSocket = (io: Server) => {
       emitGamesUpdate();
     });
 
-    socket.on('chess:move', ({ gameId, from, to }) => {
-      const game = games.find((g) => g.id === gameId);
-      if (!game) return socket.emit('error', 'Game not found');
-      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
-      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
-
-      try {
-        const move = game.privateSettings.move({ from, to });
-        if (!move) return socket.emit('error', 'invalidMove');
-      } catch (err) {
-        return socket.emit('error', 'invalidMove');
-      }
-
-      game.options.board = game.privateSettings.board();
-
-      const possibleMove = game.privateSettings.moves();
-      game.options.turn = game.options.players.find((p: any) => p.userId !== userId).userId;
-      const { privateSettings, ...gameWithoutPrivateSettings } = game;
-
-      if (game.privateSettings.isDraw()) {
-        game.winner = 'draw';
-        io.to(gameId).emit('gameOver', gameWithoutPrivateSettings);
-        games.splice(games.indexOf(game), 1);
-      } else if (game.privateSettings.isGameOver() || possibleMove.length === 0) {
-        const winner = game.options.players.find((p: any) => p.color !== game.privateSettings.turn()).userId;
-        game.winner = winner;
-        io.to(gameId).emit('gameOver', gameWithoutPrivateSettings);
-        addTransaction(
-          game.amount,
-          game.type,
-          winner,
-          game.players.filter((p) => p.userId !== winner).map((p) => p.userId)
-        );
-        games.splice(games.indexOf(game), 1);
-      } else {
-        io.to(gameId).emit('gameUpdate', gameWithoutPrivateSettings);
-      }
-
-      emitGamesUpdate();
-    });
-
-    socket.on('flappy:jump', ({ gameId }) => {
-      const game = games.find((g) => g.id === gameId);
-      if (!game) return socket.emit('error', 'Game not found');
-      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
-      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-
-      const player = game.options.players[userId];
-      // Only let the player jump if they exist and are not dead
-      if (player && !player.isDead) {
-        player.velocity = JUMP_VELOCITY;
-      }
-    });
-
-    // 🎲 Ludo: roll die
-    socket.on('ludo:rollDie', ({ gameId }) => {
-      console.log('rolling a die', userId, gameId);
-      const game = games.find((g) => g.id === gameId);
-      if (!game) return socket.emit('error', 'Game not found');
-      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
-      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
-      if (userId === game.options.rolledBy) return socket.emit('error', 'You have already rolled a die');
-
-      const roll = Math.floor(Math.random() * 6) + 1;
-      game.options.rolledBy = userId;
-      game.options.roll = roll;
-
-      let playerIndex = game.players.findIndex((p) => p.userId === userId);
-      let color: PinColor;
-      if (game.players.length === 4) {
-        color = ['red', 'blue', 'green', 'yellow'][playerIndex] as PinColor;
-      } else {
-        color = ['red', 'yellow'][playerIndex] as PinColor;
-      }
-
-      let movablePins = getMovablePins(game.options.pins, color, roll).length;
-      if (movablePins === 0) {
-        if (playerIndex === game.maxPlayers - 1) {
-          game.options.turn = game.players[0].userId;
-        } else {
-          game.options.turn = game.players[playerIndex + 1].userId;
-        }
-      }
-      io.to(gameId).emit('gameUpdate', game);
-    });
-
-    socket.on('checkers:move', ({ gameId, from, to }) => {
-      console.log('moving puck', userId, gameId, from, to);
-      const game = games.find((g) => g.id === gameId);
-      if (!game) return socket.emit('error', 'Game not found');
-      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
-      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
-
-      console.log(userId, game.players, game.options.players);
-      const playerColor = game.options.players.find((p: any) => p.userId === userId).color;
-
-      const piece = game.options.board[from.y][from.x];
-      console.log(playerColor, piece);
-      if (!piece || piece.color !== playerColor) return socket.emit('error', 'Invalid piece selection.');
-
-      const allCaptures = getAllCaptures(game.options.board, playerColor);
-
-      const isJump = Math.abs(from.x - to.x) === 2 && Math.abs(from.y - to.y) === 2;
-      const isSimpleMove = Math.abs(from.x - to.x) === 1 && Math.abs(from.y - to.y) === 1;
-
-      if (allCaptures.length > 0 && !isJump) return socket.emit('error', 'A capture is available. You must capture.');
-
-      let newBoard = cloneBoard(game.options.board);
-      let turnOver = true;
-
-      if (isJump) {
-        const midX = (from.x + to.x) / 2;
-        const midY = (from.y + to.y) / 2;
-        const jumped = game.options.board[midY][midX];
-
-        if (!jumped || jumped.color === playerColor) return socket.emit('error', 'Illegal jump: No opponent piece to jump over.');
-
-        // Perform jump
-        newBoard[from.y][from.x] = null;
-        newBoard[midY][midX] = null;
-        newBoard[to.y][to.x] = { ...piece };
-
-        // Kinging
-        if ((playerColor === 'red' && to.y === 0) || (playerColor === 'black' && to.y === 7)) {
-          newBoard[to.y][to.x]!.king = true;
-        }
-
-        // Check for multi-jump
-        const moreCaptures = getCapturesFrom(newBoard, to.x, to.y);
-        if (moreCaptures.length > 0) {
-          turnOver = false;
-        }
-      } else if (isSimpleMove) {
-        // Validate direction for non-king
-        const dy = to.y - from.y;
-        if (!piece.king) {
-          if (piece.color === 'red' && dy !== -1) return socket.emit('error', 'Red can only move up.');
-          if (piece.color === 'black' && dy !== 1) return socket.emit('error', 'Black can only move down.');
-        }
-
-        // Apply simple move
-        newBoard[from.y][from.x] = null;
-        newBoard[to.y][to.x] = { ...piece };
-
-        // Kinging
-        if ((playerColor === 'red' && to.y === 0) || (playerColor === 'black' && to.y === 7)) {
-          newBoard[to.y][to.x]!.king = true;
-        }
-      } else {
-        return socket.emit('error', 'Invalid move distance.');
-      }
-
-      // Determine next player
-      const nextPlayer = turnOver ? (playerColor === 'red' ? 'black' : 'red') : playerColor;
-
-      console.log(nextPlayer);
-      // Check for winner (no moves available for next player)
-      const nextPlayerCaptures = getAllCaptures(newBoard, nextPlayer);
-      const hasMoves =
-        nextPlayerCaptures.length > 0 ||
-        newBoard.some((row, y) => row.some((cell, x) => cell && cell.color === nextPlayer && getPossibleMoves(newBoard, x, y).length > 0));
-
-      const winnerColor = hasMoves ? null : playerColor;
-
-      game.options.board = newBoard;
-      game.options.mandatoryCaptures = !turnOver ? [{ x: to.x, y: to.y }] : [];
-      game.options.turn = game.options.players.find((p: any) => p.color === nextPlayer).userId;
-
-      if (winnerColor) {
-        game.status = 'ended';
-        const winner = game.options.players.find((p: any) => p.color === winnerColor).userId;
-        game.winner = winner;
-        io.to(gameId).emit('gameOver', game);
-        addTransaction(
-          game.amount,
-          game.type,
-          winner,
-          game.players.filter((p) => p.userId !== winner).map((p) => p.userId)
-        );
-        games.splice(games.indexOf(game), 1);
-      } else {
-        game.options.turn = game.options.players.find((p: any) => p.color === nextPlayer).userId;
-        io.to(gameId).emit('gameUpdate', game);
-      }
-
-      emitGamesUpdate();
-    });
-
-    socket.on('ludo:movePin', ({ gameId, pinHome }) => {
-      console.log('moving pin', userId, gameId, pinHome);
-      const game = games.find((g) => g.id === gameId);
-      if (!game) return socket.emit('error', 'Game not found');
-      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
-      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
-      if (userId !== game.options.rolledBy) return socket.emit('error', 'You have not rolled a die yet');
-
-      let playerIndex = game.players.findIndex((p) => p.userId === game.options.turn);
-
-      let color: PinColor;
-      if (game.players.length === 4) {
-        color = ['red', 'blue', 'green', 'yellow'][playerIndex] as PinColor;
-      } else {
-        color = ['red', 'yellow'][playerIndex] as PinColor;
-      }
-
-      let movablePins = getMovablePins(game.options.pins, color, game.options.roll);
-
-      let pin = movablePins.find((p) => p.home === pinHome);
-
-      if (!pin) return socket.emit('error', "This pin can't move");
-
-      movePiece(pin, game.options.roll);
-
-      handlePinCollision(game.options.pins, pin);
-
-      if (game.options.roll === 6) {
-        game.options.rolledBy = '';
-      } else {
-        if (playerIndex === game.maxPlayers - 1) {
-          game.options.turn = game.players[0].userId;
-        } else {
-          game.options.turn = game.players[playerIndex + 1].userId;
-        }
-      }
-
-      io.to(gameId).emit('gameUpdate', game);
-    });
-
-    // 🎯 TicTacToe move
+    // 🎯 TicTacToe select cell
     socket.on('ticTacToe:selectCell', ({ gameId, cell }) => {
-      console.log('selecting a cell', userId, gameId, cell);
-      const game = games.find((g) => g.id === gameId);
-      if (!game) return socket.emit('error', 'Game not found');
-      if (game.status !== 'playing') return socket.emit('error', "Game hasn't started or ended");
-      if (!game.players.some((p) => p.userId === userId)) return socket.emit('error', "You're not in this game");
-      if (userId !== game.options.turn) return socket.emit('error', 'Not your turn');
-      clearTimeout(game.options.timer);
-      if (game.options.board[cell]) return socket.emit('error', 'Cell taken');
-      game.options.board[cell] = userId;
-      const winner = checkWinner(game.options.board);
+      try {
+        const game = selectCell(gameId, cell, games, userId);
 
-      if (winner) {
-        game.status = 'ended';
-        game.winner = winner;
-        io.to(gameId).emit('gameOver', game);
-        addTransaction(
-          game.amount,
-          game.type,
-          winner,
-          game.players.filter((p) => p.userId !== winner).map((p) => p.userId)
-        );
-        games.splice(games.indexOf(game), 1);
-      } else if (game.options.board.every((c: string | null) => c)) {
-        game.status = 'ended';
-        game.winner = 'draw';
-        io.to(gameId).emit('gameOver', game);
-        games.splice(games.indexOf(game), 1);
-      } else {
-        game.options.turn = game.players.find((p) => p.userId !== userId)!.userId;
-        io.to(gameId).emit('gameUpdate', game);
-        startTurnTimer(gameId);
+        if (!game.winner) {
+          io.to(gameId).emit('gameUpdate', game);
+          startTurnTimer(gameId);
+        } else if (game.winner === 'draw') {
+          io.to(gameId).emit('gameOver', game);
+          games.splice(games.indexOf(game), 1);
+        } else {
+          io.to(gameId).emit('gameOver', game);
+          addTransaction(
+            game.amount,
+            game.type,
+            game.winner,
+            game.players.filter((p: any) => p.userId !== game.winner).map((p: any) => p.userId)
+          );
+          games.splice(games.indexOf(game), 1);
+        }
+      } catch (error) {
+        if (error instanceof Error) socket.emit('error', error.message);
+        else socket.emit('error', String(error));
       }
+    });
 
-      emitGamesUpdate(); // 🔁 update everyone
+    // 🎯 Ludo: roll die
+    socket.on('ludo:rollDie', ({ gameId }) => {
+      try {
+        const game = rollDie(gameId, games, userId);
+        io.to(gameId).emit('gameUpdate', game);
+      } catch (error) {
+        if (error instanceof Error) socket.emit('error', error.message);
+        else socket.emit('error', String(error));
+      }
+    });
+
+    // 🎯 Ludo: move pin
+    socket.on('ludo:movePin', ({ gameId, pinHome }) => {
+      try {
+        const game = ludoMove(gameId, pinHome, games, userId);
+
+        if (!game.winner) {
+          io.to(gameId).emit('gameUpdate', game);
+          startTurnTimer(gameId);
+        } else if (game.winner === 'draw') {
+          io.to(gameId).emit('gameOver', game);
+          games.splice(games.indexOf(game), 1);
+        } else {
+          io.to(gameId).emit('gameOver', game);
+          addTransaction(
+            game.amount,
+            game.type,
+            game.winner,
+            game.players.filter((p: any) => p.userId !== game.winner).map((p: any) => p.userId)
+          );
+          games.splice(games.indexOf(game), 1);
+        }
+      } catch (error) {
+        if (error instanceof Error) socket.emit('error', error.message);
+        else socket.emit('error', String(error));
+      }
+    });
+
+    // 🎯 checkers Move
+    socket.on('checkers:move', ({ gameId, from, to }) => {
+      try {
+        const game = checkersMove(gameId, from.x, from.y, to.x, to.y, games, userId);
+
+        if (!game.winner) {
+          io.to(gameId).emit('gameUpdate', game);
+          startTurnTimer(gameId);
+        } else if (game.winner === 'draw') {
+          io.to(gameId).emit('gameOver', game);
+          games.splice(games.indexOf(game), 1);
+        } else {
+          io.to(gameId).emit('gameOver', game);
+          addTransaction(
+            game.amount,
+            game.type,
+            game.winner,
+            game.players.filter((p: any) => p.userId !== game.winner).map((p: any) => p.userId)
+          );
+          games.splice(games.indexOf(game), 1);
+        }
+      } catch (error) {
+        if (error instanceof Error) socket.emit('error', error.message);
+        else socket.emit('error', String(error));
+      }
+    });
+
+    // 🎯 chess Move
+    socket.on('chess:move', ({ gameId, from, to }) => {
+      try {
+        const game = chessMove(gameId, from, to, games, userId);
+
+        if (!game.winner) {
+          io.to(gameId).emit('gameUpdate', game);
+          startTurnTimer(gameId);
+        } else if (game.winner === 'draw') {
+          io.to(gameId).emit('gameOver', game);
+          games.splice(games.indexOf(game), 1);
+        } else {
+          io.to(gameId).emit('gameOver', game);
+          addTransaction(
+            game.amount,
+            game.type,
+            game.winner,
+            game.players.filter((p: any) => p.userId !== game.winner).map((p: any) => p.userId)
+          );
+          games.splice(games.indexOf(game), 1);
+        }
+      } catch (error) {
+        if (error instanceof Error) socket.emit('error', error.message);
+        else socket.emit('error', String(error));
+      }
     });
 
     // ❌ Handle disconnect

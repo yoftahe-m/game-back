@@ -7,7 +7,6 @@ export const winPosition = {
   yellow: 'h9',
 };
 
-
 export const LUDO_BOARD: Array<Array<BoardSquare>> = [
   [
     {
@@ -1628,7 +1627,7 @@ export const LUDO_BOARD: Array<Array<BoardSquare>> = [
   ],
 ];
 
-export const pins: Array<Pin> = [
+export const pins: Pin[] = [
   {
     color: 'red',
     home: 'b2',
@@ -1644,13 +1643,13 @@ export const pins: Array<Pin> = [
   {
     color: 'red',
     home: 'e2',
-    position: 'e2',
+    position: 'g2',
     openPosition: 'g2',
   },
   {
     color: 'red',
     home: 'e5',
-    position: 'e5',
+    position: 'g2',
     openPosition: 'g2',
   },
   {
@@ -1668,25 +1667,25 @@ export const pins: Array<Pin> = [
   {
     color: 'blue',
     home: 'e11',
-    position: 'e11',
+    position: 'b9',
     openPosition: 'b9',
   },
   {
     color: 'blue',
     home: 'e14',
-    position: 'e14',
+    position: 'b9',
     openPosition: 'b9',
   },
   {
     color: 'green',
     home: 'k2',
-    position: 'k2',
+    position: 'n7',
     openPosition: 'n7',
   },
   {
     color: 'green',
     home: 'k5',
-    position: 'k5',
+    position: 'n7',
     openPosition: 'n7',
   },
   {
@@ -1704,13 +1703,13 @@ export const pins: Array<Pin> = [
   {
     color: 'yellow',
     home: 'k11',
-    position: 'k11',
+    position: 'i14',
     openPosition: 'i14',
   },
   {
     color: 'yellow',
     home: 'k14',
-    position: 'k14',
+    position: 'i14',
     openPosition: 'i14',
   },
   {

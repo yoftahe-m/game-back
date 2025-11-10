@@ -54,3 +54,83 @@ export function handlePinCollision(pins: Pin[], pin: Pin) {
   }
   return collidedPin && !safeSquares.includes(pin.position);
 }
+
+export function rollDie(gameId: string, games: any[], userId: string) {
+  const game = games.find((g) => g.id === gameId);
+  if (!game) throw new Error('Game not found');
+  if (game.status !== 'playing') throw new Error("Game hasn't started or ended");
+  if (!game.players.some((p: any) => p.userId === userId)) throw new Error("You're not in this game");
+  if (userId !== game.options.turn) throw new Error('Not your turn');
+  if (userId === game.options.rolledBy) throw new Error('You have already rolled a die');
+
+  const roll = Math.floor(Math.random() * 6) + 1;
+  game.options.rolledBy = userId;
+  game.options.roll = roll;
+
+  let playerIndex = game.players.findIndex((p: any) => p.userId === userId);
+  let color: PinColor;
+  if (game.players.length === 4) {
+    color = ['red', 'blue', 'green', 'yellow'][playerIndex] as PinColor;
+  } else {
+    color = ['red', 'yellow'][playerIndex] as PinColor;
+  }
+
+  let movablePins = getMovablePins(game.options.pins, color, roll).length;
+  if (movablePins === 0) {
+    if (playerIndex === game.maxPlayers - 1) {
+      game.options.turn = game.players[0].userId;
+    } else {
+      game.options.turn = game.players[playerIndex + 1].userId;
+    }
+  }
+
+  return game;
+}
+
+export function ludoMove(gameId: string, pinHome: string, games: any[], userId: string) {
+  const game = games.find((g) => g.id === gameId);
+  if (!game) throw new Error('Game not found');
+  if (game.status !== 'playing') throw new Error("Game hasn't started or ended");
+  if (!game.players.some((p: any) => p.userId === userId)) throw new Error("You're not in this game");
+  if (userId !== game.options.turn) throw new Error('Not your turn');
+  if (userId !== game.options.rolledBy) throw new Error('You have not rolled a die yet');
+
+  let playerIndex = game.players.findIndex((p: any) => p.userId === game.options.turn);
+
+  let color: PinColor;
+  if (game.players.length === 4) {
+    color = ['red', 'blue', 'green', 'yellow'][playerIndex] as PinColor;
+  } else {
+    color = ['red', 'yellow'][playerIndex] as PinColor;
+  }
+
+  let movablePins = getMovablePins(game.options.pins, color, game.options.roll);
+
+  let pin = movablePins.find((p) => p.home === pinHome);
+
+  if (!pin) throw new Error("This pin can't move");
+
+  movePiece(pin, game.options.roll);
+
+  const collision = handlePinCollision(game.options.pins, pin);
+
+  console.log(collision);
+  if (game.options.roll === 6 || collision) {
+    game.options.rolledBy = '';
+  } else {
+    if (playerIndex === game.maxPlayers - 1) {
+      game.options.turn = game.players[0].userId;
+    } else {
+      game.options.turn = game.players[playerIndex + 1].userId;
+    }
+  }
+
+  const winner = checkWinner(game.options.pins, game.options.winPinCount, color);
+
+  if (winner) {
+    game.status = 'ended';
+    game.winner = userId;
+  }
+
+  return game;
+}
