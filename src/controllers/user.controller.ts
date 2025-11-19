@@ -32,6 +32,7 @@ export const loginUser = async (req: Request, res: Response) => {
     const response = await login(email, password);
     res.status(200).json(response);
   } catch (error) {
+    console.log(error)
     res.status(400).json({ message: (error as Error).message });
   }
 };
