@@ -32,7 +32,8 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
   if (!pin || pin.color !== playerColor) throw new Error("This pin can't move");
 
   const plannedSteps: { x: number; y: number }[] = [];
-  const killedPins: { id: string; to: { x: number; y: number } }[] = [];
+  // killedPins now carries a steps array (tile-by-tile) used by clients for animation
+  const killedPins: { id: string; steps: { x: number; y: number }[] }[] = [];
 
   // 2. Handle Base Exit (Rolling a 6 to start)
   if (pin.state === 'base') {
@@ -116,12 +117,34 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
         otherPin.state === 'board' &&
         isSamePos({ x: otherPin.x, y: otherPin.y }, { x: pin.x, y: pin.y })
       ) {
-        // KILL! Send other pin to base
+        // Compute tile-by-tile path from otherPin position back to its base
+        let colorStartIndex = 0;
+        if (otherPin.color === 'red') colorStartIndex = 0;
+        else if (otherPin.color === 'blue') colorStartIndex = 13;
+        else if (otherPin.color === 'yellow') colorStartIndex = 26;
+        else if (otherPin.color === 'green') colorStartIndex = 39;
+
+        const path = [...mainPath.slice(colorStartIndex), ...mainPath.slice(0, colorStartIndex)];
+        const hitIndex = path.findIndex((p) => isSamePos(p, { x: otherPin.x, y: otherPin.y }));
+
+        const killedSteps: { x: number; y: number }[] = [];
+        if (hitIndex !== -1) {
+          // move backwards along path to the starting slot (index 0 of this rotated path)
+          for (let i = hitIndex; i >= 0; i--) {
+            killedSteps.push({ x: path[i].x, y: path[i].y });
+          }
+        }
+        // finally push base coords (off-board) so client animates off-board to base
+        killedSteps.push({ x: otherPin.base.x, y: otherPin.base.y });
+
+        // KILL! Send other pin to base (authoritative state)
         otherPin.state = 'base';
         otherPin.x = otherPin.base.x;
         otherPin.y = otherPin.base.y;
         collision = true;
-        killedPins.push({ id: otherPin.id, to: { x: otherPin.base.x, y: otherPin.base.y } });
+
+        // include full steps for clients to animate correctly
+        killedPins.push({ id: otherPin.id, steps: killedSteps });
       }
     });
   } 

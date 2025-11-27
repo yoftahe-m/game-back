@@ -129,13 +129,19 @@ export const setupGameSocket = (io: Server) => {
         const game = ludoMove(gameId, index, games, userId);
 
         if (!game.winner) {
+          // Emit the move (includes lastMove) so clients can animate it
           io.to(gameId).emit('gameUpdate', game);
+          // Immediately clear transient animation payload to prevent replay on future updates
+          if (game.options) delete game.options.lastMove;
           startTurnTimer(gameId, games, io);
         } else if (game.winner === 'draw') {
           io.to(gameId).emit('gameOver', game);
+          // clear before removing to avoid any stray usage
+          if (game.options) delete game.options.lastMove;
           games.splice(games.indexOf(game), 1);
         } else {
           io.to(gameId).emit('gameOver', game);
+          if (game.options) delete game.options.lastMove;
           addTransaction(
             game.amount,
             game.type,

@@ -97,13 +97,6 @@ export const turningPoints = {
   green: 37,
 };
 
-export const startPositions = {
-  red: { x: 1, y: 6 },
-  blue: { x: 8, y: 1 },
-  yellow: { x: 13, y: 8 },
-  green: { x: 6, y: 13 },
-};
-
 export const safeArea = [
   { x: 1, y: 6 },
   { x: 6, y: 2 },
@@ -115,21 +108,28 @@ export const safeArea = [
   { x: 2, y: 8 },
 ];
 
+export const startPositions = {
+  red: { x: 1, y: 6 },
+  blue: { x: 8, y: 1 },
+  yellow: { x: 13, y: 8 },
+  green: { x: 6, y: 13 },
+};
+
 export const pins = [
-  { id: 0, x: 1, y: 4, base: { x: 1, y: 4 }, color: 'red', state: 'base' },
-  { id: 1, x: 4, y: 4, base: { x: 4, y: 4 }, color: 'red', state: 'base' },
+  { id: 0, x: 1, y: 6, base: { x: 1, y: 4 }, color: 'red', state: 'board' },
+  { id: 1, x: 1, y: 6, base: { x: 4, y: 4 }, color: 'red', state: 'board' },
   { id: 2, x: 1, y: 1, base: { x: 1, y: 1 }, color: 'red', state: 'base' },
   { id: 3, x: 4, y: 1, base: { x: 4, y: 1 }, color: 'red', state: 'base' },
-  { id: 4, x: 13, y: 4, base: { x: 13, y: 4 }, color: 'blue', state: 'base' },
-  { id: 5, x: 10, y: 4, base: { x: 10, y: 4 }, color: 'blue', state: 'base' },
+  { id: 4, x: 8, y: 1, base: { x: 13, y: 4 }, color: 'blue', state: 'board' },
+  { id: 5, x: 8, y: 1, base: { x: 10, y: 4 }, color: 'blue', state: 'board' },
   { id: 6, x: 10, y: 1, base: { x: 10, y: 1 }, color: 'blue', state: 'base' },
   { id: 7, x: 13, y: 1, base: { x: 13, y: 1 }, color: 'blue', state: 'base' },
-  { id: 8, x: 10, y: 10, base: { x: 10, y: 10 }, color: 'yellow', state: 'base' },
-  { id: 9, x: 13, y: 10, base: { x: 13, y: 10 }, color: 'yellow', state: 'base' },
+  { id: 8, x: 13, y: 8, base: { x: 10, y: 10 }, color: 'yellow', state: 'board' },
+  { id: 9, x: 13, y: 8, base: { x: 13, y: 10 }, color: 'yellow', state: 'board' },
   { id: 10, x: 10, y: 13, base: { x: 10, y: 13 }, color: 'yellow', state: 'base' },
   { id: 11, x: 13, y: 13, base: { x: 13, y: 13 }, color: 'yellow', state: 'base' },
-  { id: 12, x: 1, y: 10, base: { x: 1, y: 10 }, color: 'green', state: 'base' },
-  { id: 13, x: 4, y: 10, base: { x: 4, y: 10 }, color: 'green', state: 'base' },
+  { id: 12, x: 6, y: 13, base: { x: 1, y: 10 }, color: 'green', state: 'board' },
+  { id: 13, x: 6, y: 13, base: { x: 4, y: 10 }, color: 'green', state: 'board' },
   { id: 14, x: 1, y: 13, base: { x: 1, y: 13 }, color: 'green', state: 'base' },
   { id: 15, x: 4, y: 13, base: { x: 4, y: 13 }, color: 'green', state: 'base' },
 ];
