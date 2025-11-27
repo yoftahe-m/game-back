@@ -115,7 +115,7 @@ export const safeArea = [
   { x: 2, y: 8 },
 ];
 
-export const initialPins = [
+export const pins = [
   { id: 0, x: 1, y: 4, base: { x: 1, y: 4 }, color: 'red', state: 'base' },
   { id: 1, x: 4, y: 4, base: { x: 4, y: 4 }, color: 'red', state: 'base' },
   { id: 2, x: 1, y: 1, base: { x: 1, y: 1 }, color: 'red', state: 'base' },

@@ -45,3 +45,53 @@ export function selectCell(gameId: string, cell: number, games: any[], userId: s
   }
   return game;
 }
+
+// function minimax(state, maximizing, aiSymbol, humanSymbol) {
+//   const outcome = checkWinner(state);
+//   if (outcome) {
+//     if (outcome.winner === aiSymbol) return 10;
+//     if (outcome.winner === humanSymbol) return -10;
+//     return 0;
+//   }
+
+//   if (maximizing) {
+//     let best = -Infinity;
+//     for (let i = 0; i < 9; i++) {
+//       if (!state[i]) {
+//         state[i] = aiSymbol;
+//         best = Math.max(best, minimax(state, false, aiSymbol, humanSymbol));
+//         state[i] = null;
+//       }
+//     }
+//     return best;
+//   } else {
+//     let best = Infinity;
+//     for (let i = 0; i < 9; i++) {
+//       if (!state[i]) {
+//         state[i] = humanSymbol;
+//         best = Math.min(best, minimax(state, true, aiSymbol, humanSymbol));
+//         state[i] = null;
+//       }
+//     }
+//     return best;
+//   }
+// }
+
+// function bestMove(state, aiSymbol) {
+//   let best = -Infinity;
+//   let move = null;
+//   const human = getOpponent(aiSymbol);
+
+//   for (let i = 0; i < 9; i++) {
+//     if (!state[i]) {
+//       state[i] = aiSymbol;
+//       const score = minimax(state, false, aiSymbol, human);
+//       state[i] = null;
+//       if (score > best) {
+//         best = score;
+//         move = i;
+//       }
+//     }
+//   }
+//   return move;
+// }

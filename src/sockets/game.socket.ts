@@ -2,7 +2,7 @@ import { Server, Socket } from 'socket.io';
 
 import { createEmptyBoard, selectCell } from '@/utils/ticTacToe';
 
-import { getMovablePins, handlePinCollision, ludoMove, movePiece, rollDie } from '@/utils/ludo';
+import { ludoMove, rollDie } from '@/utils/ludo';
 import { addTransaction, checkBalance } from '@/utils/transaction';
 import { supabaseAdmin } from '@/config/supabase';
 
@@ -124,9 +124,9 @@ export const setupGameSocket = (io: Server) => {
     });
 
     // 🎯 Ludo: move pin
-    socket.on('ludo:movePin', ({ gameId, pinHome }) => {
+    socket.on('ludo:movePin', ({ gameId, index }) => {
       try {
-        const game = ludoMove(gameId, pinHome, games, userId);
+        const game = ludoMove(gameId, index, games, userId);
 
         if (!game.winner) {
           io.to(gameId).emit('gameUpdate', game);

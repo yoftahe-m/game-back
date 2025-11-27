@@ -1,4 +1,4 @@
-import { gridSize, homePaths, initialPins, mainPath, safeArea, startPositions, turningPoints } from '@/constants/ludo';
+import { gridSize, homePaths, pins, mainPath, safeArea, startPositions, turningPoints } from '@/constants/ludo';
 
 export function ludoMove(gameId: string, index: number, games: any[], userId: string) {
   const game = games.find((g) => g.id === gameId);
@@ -8,6 +8,7 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
   if (userId !== game.options.turn) throw new Error('Not your turn');
   if (userId !== game.options.rolledBy) throw new Error('You have not rolled a die yet');
 
+  if (game.options) delete game.options.lastMove;
   // 1. Determine Player Color
   let playerIndex = game.players.findIndex((p: any) => p.userId === game.options.turn);
   let playerColor: string;
@@ -30,6 +31,9 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
 
   if (!pin || pin.color !== playerColor) throw new Error("This pin can't move");
 
+  const plannedSteps: { x: number; y: number }[] = [];
+  const killedPins: { id: string; to: { x: number; y: number } }[] = [];
+
   // 2. Handle Base Exit (Rolling a 6 to start)
   if (pin.state === 'base') {
     if (roll !== 6) throw new Error('Need a 6 to leave base');
@@ -39,8 +43,10 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
     pin.y = startPos.y;
     pin.state = 'board';
 
-    // Rule: Rolling a 6 gives another turn. We clear 'rolledBy' so user can roll again.
     game.options.rolledBy = '';
+    // Rule: Rolling a 6 gives another turn. We clear 'rolledBy' so user can roll again.
+    plannedSteps.push({ x: startPos.x, y: startPos.y });
+    game.options.lastMove = { index, steps: plannedSteps, killed: killedPins };
     return game;
   }
 
@@ -81,6 +87,7 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
     if (nextPos) {
       currentX = nextPos.x;
       currentY = nextPos.y;
+      plannedSteps.push({ x: currentX, y: currentY });
     }
   }
 
@@ -114,14 +121,17 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
         otherPin.x = otherPin.base.x;
         otherPin.y = otherPin.base.y;
         collision = true;
+        killedPins.push({ id: otherPin.id, to: { x: otherPin.base.x, y: otherPin.base.y } });
       }
     });
-  }
+  } 
 
   // 6. Check for Win (Reached End of Home Path)
   const homeArray = homePaths[pin.color];
   const lastHomePos = homeArray[homeArray.length - 1];
   const reachedEnd = pin.state === 'home' && isSamePos({ x: pin.x, y: pin.y }, lastHomePos);
+
+  game.options.lastMove = { index, steps: plannedSteps, killed: killedPins };
 
   // 7. Turn Management
   // Ludo Rules:
