@@ -169,9 +169,13 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
   });
 
   // Count pins in 'home' per color and pick the first that reached winPinCount
-  for (const color of Object.keys(homePaths)) {
-    const inHomeCount = game.options.pins.filter((p: any) => p.color === color && p.state === 'home').length;
-    if (inHomeCount >= winPinCount) {
+  const homeColors = Object.keys(homePaths) as Array<keyof typeof homePaths>;
+  for (const color of homeColors) {
+    const homeArr = homePaths[color];
+    const finalPos = homeArr[homeArr.length - 1];
+    // A pin is considered "finished" only when it has reached the final home tile.
+    const finishedCount = game.options.pins.filter((p: any) => p.color === color && isSamePos(p, finalPos)).length;
+    if (finishedCount >= winPinCount) {
       winner = colorToUserId[color];
       break;
     }
