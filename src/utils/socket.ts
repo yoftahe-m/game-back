@@ -1,7 +1,7 @@
 import { Chess } from 'chess.js';
 import { v4 as uuid } from 'uuid';
 
-import { pins } from '@/constants/ludo';
+import { createInitialPins } from '@/constants/ludo';
 import { createEmptyBoard } from './ticTacToe';
 import { createCheckersBoard } from './checkers';
 import { addTransaction, checkBalance } from './transaction';
@@ -69,8 +69,9 @@ export async function handelCreateGame(
   let gameOptions = {};
   switch (type) {
     case 'Ludo':
+      const allPins = createInitialPins();
       gameOptions = {
-        pins: players === 2 ? pins.filter((p) => p.color === 'red' || p.color === 'yellow') : pins,
+        pins: players === 2 ? allPins.filter((p) => p.color === 'red' || p.color === 'yellow') : allPins,
         roll: 0,
         rolledBy: '',
         turn: userId,

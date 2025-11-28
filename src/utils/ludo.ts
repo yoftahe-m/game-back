@@ -1,4 +1,5 @@
-import { gridSize, homePaths, pins, mainPath, safeArea, startPositions, turningPoints } from '@/constants/ludo';
+import { gridSize, homePaths,  mainPath, safeArea, startPositions, turningPoints } from '@/constants/ludo';
+import { createInitialPins } from '../constants/ludo';
 
 export function ludoMove(gameId: string, index: number, games: any[], userId: string) {
   const game = games.find((g) => g.id === gameId);
@@ -156,6 +157,42 @@ export function ludoMove(gameId: string, index: number, games: any[], userId: st
 
   game.options.lastMove = { index, steps: plannedSteps, killed: killedPins };
 
+  // Determine winner based on game.options.winPinCount (fallback to 4)
+  const winPinCount = typeof game.options?.winPinCount === 'number' ? game.options.winPinCount : 4;
+  let winner: string | null = null;
+
+  // Map player index -> color (same logic as above)
+  const colorOrder = game.players.length === 4 ? ['red', 'blue', 'green', 'yellow'] : ['red', 'yellow'];
+  const colorToUserId: Record<string, string> = {};
+  game.players.forEach((p: any, idx: number) => {
+    colorToUserId[colorOrder[idx]] = p.userId;
+  });
+
+  // Count pins in 'home' per color and pick the first that reached winPinCount
+  for (const color of Object.keys(homePaths)) {
+    const inHomeCount = game.options.pins.filter((p: any) => p.color === color && p.state === 'home').length;
+    if (inHomeCount >= winPinCount) {
+      winner = colorToUserId[color];
+      break;
+    }
+  }
+
+  if (winner) {
+    game.status = 'ended';
+    game.winner = winner;
+
+    // Reset board to initial pin layout so clients don't keep old pin positions
+    game.options.pins = createInitialPins();
+
+    // clear turn/roll state and any transient animation payload
+    game.options.turn = '';
+    game.options.rolledBy = '';
+    game.options.roll = 0;
+    if (game.options.lastMove) delete game.options.lastMove;
+
+    return game;
+  }
+  
   // 7. Turn Management
   // Ludo Rules:
   // 1. Roll 6 = Extra Turn

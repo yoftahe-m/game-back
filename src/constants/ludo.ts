@@ -115,7 +115,7 @@ export const startPositions = {
   green: { x: 6, y: 13 },
 };
 
-export const pins = [
+export const pinsTemplate = [
   { id: 0, x: 1, y: 6, base: { x: 1, y: 4 }, color: 'red', state: 'board' },
   { id: 1, x: 1, y: 6, base: { x: 4, y: 4 }, color: 'red', state: 'board' },
   { id: 2, x: 1, y: 1, base: { x: 1, y: 1 }, color: 'red', state: 'base' },
@@ -133,3 +133,15 @@ export const pins = [
   { id: 14, x: 1, y: 13, base: { x: 1, y: 13 }, color: 'green', state: 'base' },
   { id: 15, x: 4, y: 13, base: { x: 4, y: 13 }, color: 'green', state: 'base' },
 ];
+
+// Factory: always return a deep-cloned array so consumers don't mutate the template.
+export function createInitialPins() {
+  return pinsTemplate.map((p) => ({
+    id: p.id,
+    x: p.x,
+    y: p.y,
+    base: { x: p.base.x, y: p.base.y },
+    color: p.color,
+    state: p.state,
+  }));
+}
